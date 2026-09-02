@@ -3,5 +3,6 @@
 public enum OutputFormat
 {
     DecryptedIso,
-    JbFolder
+    JbFolder,
+    EncryptedIsoWithKey
 }

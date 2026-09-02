@@ -327,6 +327,107 @@ public partial class MainViewModel : ViewModelBase
                 inputIsoPath =
                     extractionResult.IsoPath;
             }
+            if (job.OutputFormat ==
+                OutputFormat.EncryptedIsoWithKey)
+            {
+                job.Status = "Copying";
+                job.CurrentStage = "Copying encrypted ISO";
+                job.Progress = 0;
+                job.TransferSpeedMbps = 0;
+                job.EtaText = string.Empty;
+                job.Details =
+                    "Copying encrypted ISO and disc key to destination...";
+
+                var finalIsoFileName =
+                    job.DetectedIsoName ??
+                    Path.GetFileName(inputIsoPath);
+
+                var copyProgress =
+                    new Progress<TransferProgress>(value =>
+                    {
+                        job.Progress =
+                            value.Percentage;
+
+                        job.TransferSpeedMbps =
+                            value.MegabytesPerSecond;
+
+                        if (value.EstimatedRemaining.HasValue)
+                        {
+                            var eta =
+                                value.EstimatedRemaining.Value;
+
+                            job.EtaText =
+                                $"Copying — " +
+                                $"{value.MegabytesPerSecond:F1} MB/s — " +
+                                $"{eta:hh\\:mm\\:ss} remaining";
+                        }
+                        else
+                        {
+                            job.EtaText =
+                                $"Copying — " +
+                                $"{value.MegabytesPerSecond:F1} MB/s";
+                        }
+                    });
+
+                var deliveryResult =
+                    await deliveryService.CopyAsync(
+                        inputIsoPath,
+                        destinationPath,
+                        copyProgress,
+                        finalIsoFileName);
+
+                if (!deliveryResult.Success)
+                {
+                    job.Status = "Error";
+                    job.CurrentStage = "Error";
+                    job.Details =
+                        deliveryResult.Error;
+                    continue;
+                }
+
+                var destinationKeyPath =
+                    Path.ChangeExtension(
+                        deliveryResult.DestinationPath,
+                        ".dkey");
+
+                await File.WriteAllTextAsync(
+                    destinationKeyPath,
+                    job.DiscKey);
+
+                job.OutputPath =
+                    deliveryResult.DestinationPath;
+
+                try
+                {
+                    if (temporaryExtractionDirectory is not null &&
+                        Directory.Exists(
+                            temporaryExtractionDirectory))
+                    {
+                        Directory.Delete(
+                            temporaryExtractionDirectory,
+                            recursive: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    job.Status = "Complete";
+                    job.CurrentStage = "Complete";
+                    job.Progress = 100;
+                    job.EtaText = string.Empty;
+                    job.Details =
+                        $"Encrypted ISO and key copied successfully, but temporary cleanup failed: {ex.Message}";
+                    continue;
+                }
+
+                job.Status = "Complete";
+                job.CurrentStage = "Complete";
+                job.Progress = 100;
+                job.EtaText = string.Empty;
+                job.Details =
+                    $"Encrypted ISO and key copied to: {job.OutputPath}";
+
+                continue;
+            }
 
             job.Status = "Decrypting";
             job.CurrentStage = "Decrypting";

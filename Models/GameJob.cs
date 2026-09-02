@@ -66,6 +66,11 @@ public partial class GameJob : ObservableObject
     {
         Value = OutputFormat.JbFolder,
         Name = "JB Folder"
+    },
+    new()
+    {
+        Value = OutputFormat.EncryptedIsoWithKey,
+        Name = "Encrypted ISO + key"
     }
     ];
 }
