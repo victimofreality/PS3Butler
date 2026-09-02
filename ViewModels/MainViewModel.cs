@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using PS3Butler.Configuration;
 using PS3Butler.Models;
 using PS3Butler.Services;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -198,6 +199,61 @@ public partial class MainViewModel : ViewModelBase
         foreach (var job in Jobs)
         {
             await preflightService.PreflightAsync(job);
+        }
+    }
+
+    [RelayCommand]
+    private async Task ProcessReadyJobs()
+    {
+        var ps3DecService =
+            new Ps3DecService(
+                RedrrxPs3DecPath,
+                Ps3DecThreadCount);
+
+        foreach (var job in Jobs)
+        {
+            if (job.Status != "Ready")
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(job.DiscKey))
+            {
+                job.Status = "Error";
+                job.Details = "Disc key is missing.";
+                continue;
+            }
+
+            var extension = Path.GetExtension(job.SourcePath);
+
+            if (!extension.Equals(
+                    ".iso",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                job.Status = "Waiting";
+                job.Details =
+                    "Archive extraction is not implemented yet.";
+                continue;
+            }
+
+            job.Status = "Decrypting";
+            job.Details = "Decrypting ISO with ps3decrs...";
+
+            var result = await ps3DecService.DecryptAsync(
+                job.SourcePath,
+                job.DiscKey,
+                WorkDirectory);
+
+            if (!result.Success)
+            {
+                job.Status = "Error";
+                job.Details = result.Error;
+                continue;
+            }
+
+            job.OutputPath = result.OutputPath;
+            job.Status = "Complete";
+            job.Details = $"Decrypted ISO: {result.OutputPath}";
         }
     }
 

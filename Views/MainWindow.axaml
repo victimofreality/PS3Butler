@@ -176,6 +176,10 @@
 							Content="Preflight Queue"
 							Command="{Binding PreflightQueueCommand}" />
 
+						<Button
+							Content="Process Ready Jobs"
+							Command="{Binding ProcessReadyJobsCommand}" />
+
 					</StackPanel>
 
 					<ItemsControl ItemsSource="{Binding Jobs}">
