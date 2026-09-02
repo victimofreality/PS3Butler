@@ -11,6 +11,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace PS3Butler.ViewModels;
 
@@ -21,6 +22,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly Window _window;
     private readonly KeyIndexService _keyIndexService;
     private readonly MetadataCacheService _metadataCacheService;
+    private CancellationTokenSource? _downloadCancellationTokenSource;
 
     public string Greeting { get; } = "PS3 Butler";
 
@@ -56,6 +58,9 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial bool RemovePs3Update { get; set; }
+
+    [ObservableProperty]
+    public partial string UrlToAdd { get; set; } = string.Empty;
 
     public string SettingsLocation => _settingsService.SettingsFilePath;
 
@@ -200,6 +205,44 @@ public partial class MainViewModel : ViewModelBase
             await PreflightQueue();
         }
     }
+
+    [RelayCommand]
+    private void AddUrl()
+    {
+        var url = UrlToAdd.Trim();
+
+        if (!Uri.TryCreate(
+                url,
+                UriKind.Absolute,
+                out var uri))
+        {
+            SettingsStatus =
+                "Invalid URL.";
+            return;
+        }
+
+        if (uri.Scheme != Uri.UriSchemeHttp &&
+            uri.Scheme != Uri.UriSchemeHttps)
+        {
+            SettingsStatus =
+                "Only HTTP and HTTPS URLs are supported.";
+            return;
+        }
+
+        Jobs.Add(new GameJob
+        {
+            SourcePath = url,
+            SourceType = GameSourceType.Url,
+            Status = "Waiting",
+            Details = "Waiting to download."
+        });
+
+        UrlToAdd = string.Empty;
+
+        SettingsStatus =
+            "URL added to queue.";
+    }
+
     [RelayCommand]
     private async Task PreflightQueue()
     {
@@ -233,10 +276,98 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ProcessReadyJobs()
     {
+        var downloadService =
+            new DownloadService();
+
+        _downloadCancellationTokenSource =
+            new CancellationTokenSource();
+
+        foreach (var job in Jobs)
+        {
+            if (job.SourceType != GameSourceType.Url ||
+                job.Status == "Complete" ||
+                job.Status == "Already exists")
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
+                File.Exists(job.LocalSourcePath))
+            {
+                continue;
+            }
+
+            job.Status = "Downloading";
+            job.CurrentStage = "Downloading";
+            job.Progress = 0;
+            job.TransferSpeedMbps = 0;
+            job.EtaText = string.Empty;
+            job.Details = "Downloading source file...";
+
+            var downloadDirectory =
+                Path.Combine(
+                    WorkDirectory,
+                    "download",
+                    Guid.NewGuid().ToString("N"));
+
+            var downloadProgress =
+                new Progress<TransferProgress>(value =>
+                {
+                    job.Progress =
+                        value.Percentage;
+
+                    job.TransferSpeedMbps =
+                        value.MegabytesPerSecond;
+
+                    if (value.EstimatedRemaining.HasValue)
+                    {
+                        var eta =
+                            value.EstimatedRemaining.Value;
+
+                        job.EtaText =
+                            $"Downloading — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s — " +
+                            $"{eta:hh\\:mm\\:ss} remaining";
+                    }
+                    else
+                    {
+                        job.EtaText =
+                            $"Downloading — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s";
+                    }
+                });
+
+            var downloadResult =
+                await downloadService.DownloadAsync(
+                    job.SourcePath,
+                    downloadDirectory,
+                    downloadProgress,
+                    _downloadCancellationTokenSource.Token);
+
+            if (!downloadResult.Success)
+            {
+                job.Status = "Error";
+                job.CurrentStage = "Error";
+                job.Details =
+                    downloadResult.Error;
+                continue;
+            }
+
+            job.LocalSourcePath =
+                downloadResult.OutputPath;
+
+            job.Status = "Waiting";
+            job.CurrentStage = string.Empty;
+            job.Progress = 0;
+            job.TransferSpeedMbps = 0;
+            job.EtaText = string.Empty;
+            job.Details =
+                "Download complete. Waiting for preflight.";
+        }
+
         await PreflightQueue();
 
-        var ps3DecService =
-            new Ps3DecService(
+        var ps3DecService = new Ps3DecService(
                 RedrrxPs3DecPath,
                 Ps3DecThreadCount);
 
@@ -286,15 +417,18 @@ public partial class MainViewModel : ViewModelBase
             string? temporaryExtractionDirectory = null;
             string? temporaryJbDirectory = null;
 
+            var sourcePath =
+                job.EffectiveSourcePath;
+
             var extension =
-                Path.GetExtension(job.SourcePath);
+                Path.GetExtension(sourcePath);
 
             if (extension.Equals(
                     ".iso",
                     StringComparison.OrdinalIgnoreCase))
             {
                 inputIsoPath =
-                    job.SourcePath;
+                    sourcePath;
             }
             else
             {
@@ -318,7 +452,7 @@ public partial class MainViewModel : ViewModelBase
 
                 var extractionResult =
                     await archiveExtractionService.ExtractIsoAsync(
-                        job.SourcePath,
+                        sourcePath,
                         temporaryExtractionDirectory,
                         extractionProgress);
 
@@ -475,7 +609,7 @@ public partial class MainViewModel : ViewModelBase
                 var gameName =
                     Path.GetFileNameWithoutExtension(
                         job.DetectedIsoName ??
-                        job.SourcePath);
+                        sourcePath);
 
                 _metadataCacheService.AddOrUpdate(
                     gameName,
@@ -526,7 +660,7 @@ public partial class MainViewModel : ViewModelBase
 
                 var finalIsoFileName =
                     job.DetectedIsoName ??
-                    Path.GetFileName(job.SourcePath);
+                    Path.GetFileName(sourcePath);
 
                 var deliveryResult =
                     await deliveryService.CopyAsync(
@@ -572,7 +706,7 @@ public partial class MainViewModel : ViewModelBase
                         MakeSafeFolderName(
                             Path.GetFileNameWithoutExtension(
                                 job.DetectedIsoName ??
-                                job.SourcePath));
+                                sourcePath));
                 }
                 temporaryJbDirectory =
                     Path.Combine(
@@ -898,6 +1032,12 @@ public partial class MainViewModel : ViewModelBase
         {
             Jobs.Remove(job);
         }
+    }
+
+    [RelayCommand]
+    private void CancelDownload()
+    {
+        _downloadCancellationTokenSource?.Cancel();
     }
 
     [RelayCommand]

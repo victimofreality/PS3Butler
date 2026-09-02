@@ -1,14 +1,57 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
+using System;
 using System.IO;
 
 namespace PS3Butler.Models;
 
+public enum GameSourceType
+{
+    LocalFile,
+    Url
+}
+
 public partial class GameJob : ObservableObject
 {
     public string SourcePath { get; set; } = string.Empty;
+    public GameSourceType SourceType { get; set; } =
+      GameSourceType.LocalFile;
 
-    public string DisplayName =>
-        Path.GetFileName(SourcePath);
+    public string? LocalSourcePath { get; set; }
+
+    public string EffectiveSourcePath =>
+        SourceType == GameSourceType.Url &&
+        !string.IsNullOrWhiteSpace(LocalSourcePath)
+            ? LocalSourcePath
+            : SourcePath;
+
+    public string DisplayName
+    {
+        get
+        {
+            if (SourceType == GameSourceType.Url)
+            {
+                if (Uri.TryCreate(
+                        SourcePath,
+                        UriKind.Absolute,
+                        out var uri))
+                {
+                    var fileName =
+                        Path.GetFileName(
+                            Uri.UnescapeDataString(
+                                uri.AbsolutePath));
+
+                    if (!string.IsNullOrWhiteSpace(fileName))
+                    {
+                        return fileName;
+                    }
+                }
+
+                return SourcePath;
+            }
+
+            return Path.GetFileName(SourcePath);
+        }
+    }
 
     [ObservableProperty]
     public partial string Status { get; set; } = "Waiting";

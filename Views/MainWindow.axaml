@@ -181,12 +181,32 @@
 								Content="Process Ready Jobs"
 								Command="{Binding ProcessReadyJobsCommand}" />
 
+							<Button
+								Content="Cancel Download"
+								Command="{Binding CancelDownloadCommand}" />
+
 						</StackPanel>
+						
+						<Grid
+							ColumnDefinitions="*,Auto"
+							ColumnSpacing="10">
+
+							<TextBox
+								Grid.Column="0"
+								Watermark="HTTP/HTTPS game URL"
+								Text="{Binding UrlToAdd, Mode=TwoWay}" />
+
+							<Button
+								Grid.Column="1"
+								Content="Add URL"
+								Command="{Binding AddUrlCommand}" />
+
+						</Grid>
 
 						<StackPanel
 							Orientation="Horizontal"
 							Spacing="10">
-
+							
 							<Button
 								Content="Preflight Queue"
 								Command="{Binding PreflightQueueCommand}" />

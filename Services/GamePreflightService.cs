@@ -41,15 +41,24 @@ public class GamePreflightService
         job.DetectedIsoName = null;
         job.DiscKey = null;
         job.Details = string.Empty;
+        if (job.SourceType == GameSourceType.Url &&
+            string.IsNullOrWhiteSpace(job.LocalSourcePath))
+        {
+            job.Status = "Waiting";
+            job.Details = "Waiting to download.";
+            return;
+        }
 
-        if (!File.Exists(job.SourcePath))
+        var sourcePath = job.EffectiveSourcePath;
+
+        if (!File.Exists(sourcePath))
         {
             job.Status = "Error";
             job.Details = "Source file does not exist.";
             return;
         }
 
-        var extension = Path.GetExtension(job.SourcePath);
+        var extension = Path.GetExtension(sourcePath);
 
         if (!SupportedExtensions.Contains(
                 extension,
@@ -66,15 +75,15 @@ public class GamePreflightService
                 ".iso",
                 StringComparison.OrdinalIgnoreCase))
         {
-            job.DetectedIsoName = Path.GetFileName(job.SourcePath);
-            gameName = Path.GetFileNameWithoutExtension(job.SourcePath);
+            job.DetectedIsoName = Path.GetFileName(sourcePath);
+            gameName = Path.GetFileNameWithoutExtension(sourcePath);
         }
         else
         {
             job.Status = "Inspecting archive";
 
             var isoName =
-                await _archiveInspectionService.FindIsoNameAsync(job.SourcePath);
+                await _archiveInspectionService.FindIsoNameAsync(sourcePath);
 
             if (isoName is null)
             {
