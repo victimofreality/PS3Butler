@@ -5,5 +5,5 @@ namespace PS3Butler.ViewModels;
 public partial class MainViewModel : ViewModelBase
 {
     [ObservableProperty]
-    public partial string Greeting { get; set; } = "Welcome to Avalonia!";
+    public partial string Greeting { get; set; } = "PS3 Butler";
 }
