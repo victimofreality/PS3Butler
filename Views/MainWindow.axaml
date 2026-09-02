@@ -232,20 +232,25 @@
 												Text="{Binding DisplayName}"
 												FontWeight="SemiBold" />
 
+
 											<ComboBox
-											    Width="180"
+												Width="180"
 												HorizontalAlignment="Left"
 												ItemsSource="{x:Static models:GameJob.AvailableOutputFormats}"
 												SelectedValue="{Binding OutputFormat}"
 												SelectedValueBinding="{ReflectionBinding Path=Value}">
-
 												<ComboBox.ItemTemplate>
 													<DataTemplate x:DataType="models:OutputFormatOption">
 														<TextBlock Text="{Binding Name}" />
 													</DataTemplate>
 												</ComboBox.ItemTemplate>
-
 											</ComboBox>
+
+											<TextBox
+												Width="420"
+												HorizontalAlignment="Left"
+												Watermark="Destination override (blank = default)"
+												Text="{Binding DestinationOverride, Mode=TwoWay}" />
 
 											<TextBlock
 												Text="{Binding SourcePath}"
