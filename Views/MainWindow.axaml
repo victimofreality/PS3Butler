@@ -228,6 +228,25 @@
 												Text="{Binding DisplayName}"
 												FontWeight="SemiBold" />
 
+											<ComboBox
+											    Width="180"
+												HorizontalAlignment="Left"
+												ItemsSource="{x:Static models:GameJob.AvailableOutputFormats}"
+												SelectedValue="{Binding OutputFormat}"
+												SelectedValueBinding="{ReflectionBinding Path=Value}">
+
+												<ComboBox.ItemTemplate>
+													<DataTemplate x:DataType="models:OutputFormatOption">
+														<TextBlock Text="{Binding Name}" />
+													</DataTemplate>
+												</ComboBox.ItemTemplate>
+
+											</ComboBox>
+
+											<TextBlock
+												Text="{Binding SourcePath}"
+												FontSize="12"
+												TextWrapping="Wrap" />
 											<TextBlock
 												Text="{Binding SourcePath}"
 												FontSize="12"

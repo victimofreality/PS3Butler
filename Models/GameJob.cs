@@ -42,4 +42,22 @@ public partial class GameJob : ObservableObject
 
     [ObservableProperty]
     public partial string EtaText { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial OutputFormat OutputFormat { get; set; } =
+    OutputFormat.DecryptedIso;
+
+    public static OutputFormatOption[] AvailableOutputFormats { get; } =
+    [
+        new()
+    {
+        Value = OutputFormat.DecryptedIso,
+        Name = "Decrypted ISO"
+    },
+    new()
+    {
+        Value = OutputFormat.JbFolder,
+        Name = "JB Folder"
+    }
+    ];
 }
