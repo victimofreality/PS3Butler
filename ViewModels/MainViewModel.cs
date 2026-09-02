@@ -13,7 +13,9 @@ public class MainViewModel : ViewModelBase
 
     public MainViewModel()
     {
-        var settings = new AppSettings();
+        var settingsService = new SettingsService();
+        var settings = settingsService.Load();
+
         var toolDetectionService = new ToolDetectionService(settings);
 
         foreach (var tool in toolDetectionService.DetectTools())
