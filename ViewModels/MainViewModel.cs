@@ -678,6 +678,29 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task BrowseJobDestination(GameJob? job)
+    {
+        if (job is null)
+        {
+            return;
+        }
+
+        var folders =
+            await _window.StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions
+                {
+                    Title = "Select destination for this job",
+                    AllowMultiple = false
+                });
+
+        if (folders.Count > 0)
+        {
+            job.DestinationOverride =
+                folders[0].Path.LocalPath;
+        }
+    }
+
+    [RelayCommand]
     private async Task BrowseRedumpKeys()
     {
         var folders = await _window.StorageProvider.OpenFolderPickerAsync(

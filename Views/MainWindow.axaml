@@ -246,12 +246,24 @@
 												</ComboBox.ItemTemplate>
 											</ComboBox>
 
-											<TextBox
-												Width="420"
+											<Grid
+												ColumnDefinitions="*,Auto"
+												ColumnSpacing="8"
 												HorizontalAlignment="Left"
-												Watermark="Destination override (blank = default)"
-												Text="{Binding DestinationOverride, Mode=TwoWay}" />
+												Width="520">
 
+												<TextBox
+													Grid.Column="0"
+													Watermark="Destination override (blank = default)"
+													Text="{Binding DestinationOverride, Mode=TwoWay}" />
+
+												<Button
+													Grid.Column="1"
+													Content="Browse..."
+													Command="{Binding $parent[Window].DataContext.BrowseJobDestinationCommand}"
+													CommandParameter="{Binding}" />
+
+											</Grid>
 											<TextBlock
 												Text="{Binding SourcePath}"
 												FontSize="12"

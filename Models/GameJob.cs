@@ -28,7 +28,13 @@ public partial class GameJob : ObservableObject
     [ObservableProperty]
     public partial string? OutputPath { get; set; }
 
-    public string? DestinationOverride { get; set; }
+    private string? _destinationOverride;
+
+    public string? DestinationOverride
+    {
+        get => _destinationOverride;
+        set => SetProperty(ref _destinationOverride, value);
+    }
 
     [ObservableProperty]
     public partial string? TitleId { get; set; }
