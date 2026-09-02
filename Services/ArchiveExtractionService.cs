@@ -2,12 +2,17 @@
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
 
 public class ArchiveExtractionService
 {
+    private static readonly Regex ProgressRegex =
+        new(@"(?<percent>\d{1,3})%",
+            RegexOptions.Compiled);
+
     private readonly string _sevenZipPath;
 
     public ArchiveExtractionService(string sevenZipPath)
@@ -17,7 +22,8 @@ public class ArchiveExtractionService
 
     public async Task<(bool Success, string IsoPath, string Error)> ExtractIsoAsync(
         string archivePath,
-        string outputDirectory)
+        string outputDirectory,
+        IProgress<double>? progress = null)
     {
         if (!File.Exists(_sevenZipPath))
         {
@@ -48,6 +54,7 @@ public class ArchiveExtractionService
 
         startInfo.ArgumentList.Add("x");
         startInfo.ArgumentList.Add("-y");
+        startInfo.ArgumentList.Add("-bsp1");
         startInfo.ArgumentList.Add($"-o{outputDirectory}");
         startInfo.ArgumentList.Add(archivePath);
 
@@ -58,33 +65,79 @@ public class ArchiveExtractionService
 
         process.Start();
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
+        var stderrTask =
+            process.StandardError.ReadToEndAsync();
+
+        var outputBuffer =
+            new char[256];
+
+        var pendingText =
+            string.Empty;
+
+        while (true)
+        {
+            var charsRead =
+                await process.StandardOutput.ReadAsync(
+                    outputBuffer.AsMemory(
+                        0,
+                        outputBuffer.Length));
+
+            if (charsRead == 0)
+            {
+                break;
+            }
+
+            pendingText +=
+                new string(
+                    outputBuffer,
+                    0,
+                    charsRead);
+
+            var matches =
+                ProgressRegex.Matches(
+                    pendingText);
+
+            foreach (Match match in matches)
+            {
+                if (double.TryParse(
+                        match.Groups["percent"].Value,
+                        out var percentage))
+                {
+                    progress?.Report(
+                        Math.Clamp(
+                            percentage,
+                            0,
+                            100));
+                }
+            }
+
+            if (pendingText.Length > 1024)
+            {
+                pendingText =
+                    pendingText[^512..];
+            }
+        }
 
         await process.WaitForExitAsync();
 
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
+        var stderr =
+            await stderrTask;
 
         if (process.ExitCode != 0)
         {
-            var error =
-                string.IsNullOrWhiteSpace(stderr)
-                    ? stdout
-                    : stderr;
-
             return (
                 false,
                 string.Empty,
-                $"7-Zip exited with code {process.ExitCode}: {error.Trim()}");
+                $"7-Zip exited with code {process.ExitCode}: {stderr.Trim()}");
         }
 
-        var isoFiles = Directory
-            .EnumerateFiles(
-                outputDirectory,
-                "*.iso",
-                SearchOption.AllDirectories)
-            .ToList();
+        var isoFiles =
+            Directory
+                .EnumerateFiles(
+                    outputDirectory,
+                    "*.iso",
+                    SearchOption.AllDirectories)
+                .ToList();
 
         if (isoFiles.Count == 0)
         {
@@ -101,6 +154,8 @@ public class ArchiveExtractionService
                 string.Empty,
                 "Extraction completed but multiple ISOs were found.");
         }
+
+        progress?.Report(100);
 
         return (
             true,

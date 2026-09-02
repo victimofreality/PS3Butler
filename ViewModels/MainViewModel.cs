@@ -276,10 +276,17 @@ public partial class MainViewModel : ViewModelBase
                         WorkDirectory,
                         Path.GetFileNameWithoutExtension(job.SourcePath));
 
+                var extractionProgress =
+                    new Progress<double>(value =>
+                    {
+                        job.Progress = value;
+                    });
+
                 var extractionResult =
                     await archiveExtractionService.ExtractIsoAsync(
                         job.SourcePath,
-                        temporaryExtractionDirectory);
+                        temporaryExtractionDirectory,
+                        extractionProgress);
 
                 if (!extractionResult.Success)
                 {
