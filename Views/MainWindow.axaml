@@ -6,21 +6,84 @@
     xmlns:vm="using:PS3Butler.ViewModels"
     xmlns:models="using:PS3Butler.Models"
     mc:Ignorable="d"
-    d:DesignWidth="900"
-    d:DesignHeight="600"
+    d:DesignWidth="1000"
+    d:DesignHeight="750"
     x:Class="PS3Butler.Views.MainWindow"
     x:DataType="vm:MainViewModel"
     Title="PS3 Butler"
-    Width="900"
-    Height="600">
+    Width="1000"
+    Height="750"
+    MinWidth="800"
+    MinHeight="600">
 
 	<ScrollViewer>
-		<StackPanel Margin="30" Spacing="20">
+		<StackPanel Margin="30" Spacing="24">
 
 			<TextBlock
                 Text="{Binding Greeting}"
                 FontSize="32"
                 FontWeight="Bold" />
+
+			<Border
+                Padding="18"
+                BorderThickness="1"
+                CornerRadius="8">
+
+				<StackPanel Spacing="12">
+
+					<TextBlock
+                        Text="Settings"
+                        FontSize="20"
+                        FontWeight="SemiBold" />
+
+					<TextBlock Text="PS3Dec (Redrrx)" />
+					<TextBox Text="{Binding RedrrxPs3DecPath}" />
+
+					<TextBlock Text="PS3Dec (Classic)" />
+					<TextBox Text="{Binding ClassicPs3DecPath}" />
+
+					<TextBlock Text="7-Zip" />
+					<TextBox Text="{Binding SevenZipPath}" />
+
+					<TextBlock Text="Redump key directory" />
+					<TextBox Text="{Binding RedumpKeysPath}" />
+
+					<TextBlock Text="PS3Dec thread count" />
+
+					<NumericUpDown
+                        Value="{Binding Ps3DecThreadCount}"
+                        Minimum="1"
+                        Maximum="256"
+                        Increment="1"
+                        Width="140"
+                        HorizontalAlignment="Left" />
+
+					<StackPanel
+                        Orientation="Horizontal"
+                        Spacing="12">
+
+						<Button
+                            Content="Save Settings"
+                            Command="{Binding SaveSettingsCommand}" />
+
+						<TextBlock
+                            Text="{Binding SettingsStatus}"
+                            VerticalAlignment="Center" />
+
+					</StackPanel>
+
+					<Separator />
+
+					<TextBlock
+                        Text="{Binding SettingsMode, StringFormat='Mode: {0}'}" />
+
+					<TextBlock
+                        Text="{Binding SettingsLocation, StringFormat='Settings file: {0}'}"
+                        TextWrapping="Wrap" />
+
+				</StackPanel>
+
+			</Border>
 
 			<TextBlock
                 Text="Dependency check"
@@ -30,6 +93,7 @@
 			<ItemsControl ItemsSource="{Binding Tools}">
 				<ItemsControl.ItemTemplate>
 					<DataTemplate x:DataType="models:ToolStatus">
+
 						<Border
                             Margin="0,0,0,10"
                             Padding="15"
@@ -50,6 +114,7 @@
 							</StackPanel>
 
 						</Border>
+
 					</DataTemplate>
 				</ItemsControl.ItemTemplate>
 			</ItemsControl>
