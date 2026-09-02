@@ -30,4 +30,10 @@ public partial class GameJob : ObservableObject
 
     [ObservableProperty]
     public partial string? TitleId { get; set; }
+
+    [ObservableProperty]
+    public partial double Progress { get; set; }
+
+    [ObservableProperty]
+    public partial string CurrentStage { get; set; } = string.Empty;
 }

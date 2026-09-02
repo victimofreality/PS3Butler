@@ -267,6 +267,8 @@ public partial class MainViewModel : ViewModelBase
             else
             {
                 job.Status = "Extracting";
+                job.CurrentStage = "Extracting";
+                job.Progress = 0;
                 job.Details = "Extracting ISO from archive...";
 
                 temporaryExtractionDirectory =
@@ -290,6 +292,8 @@ public partial class MainViewModel : ViewModelBase
             }
 
             job.Status = "Decrypting";
+            job.CurrentStage = "Decrypting";
+            job.Progress = 0;
             job.Details = "Decrypting ISO with ps3decrs...";
 
             var decryptResult =
@@ -324,12 +328,21 @@ public partial class MainViewModel : ViewModelBase
                 job.TitleId = metadata.TitleId;
             }
             job.Status = "Copying";
+            job.CurrentStage = "Copying";
+            job.Progress = 0;
             job.Details = "Copying decrypted ISO to destination...";
+
+            var copyProgress =
+                new Progress<double>(value =>
+                {
+                    job.Progress = value;
+                });
 
             var deliveryResult =
                 await deliveryService.CopyAsync(
                     decryptResult.OutputPath,
-                    DefaultDestinationPath);
+                    DefaultDestinationPath,
+                    copyProgress);
 
             if (!deliveryResult.Success)
             {
@@ -364,6 +377,7 @@ public partial class MainViewModel : ViewModelBase
             }
 
             job.Status = "Complete";
+            job.Progress = 100;
             job.Details =
                 $"Decrypted ISO copied to: {deliveryResult.DestinationPath}";
         }

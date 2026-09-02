@@ -8,7 +8,8 @@ public class DeliveryService
 {
     public async Task<(bool Success, string DestinationPath, string Error)> CopyAsync(
         string sourcePath,
-        string destinationDirectory)
+        string destinationDirectory,
+        IProgress<double>? progress = null)
     {
         if (!File.Exists(sourcePath))
         {
@@ -35,12 +36,18 @@ public class DeliveryService
 
         try
         {
+            var sourceInfo = new FileInfo(sourcePath);
+            var totalBytes = sourceInfo.Length;
+            long copiedBytes = 0;
+
+            var buffer = new byte[1024 * 1024];
+
             await using var sourceStream = new FileStream(
                 sourcePath,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read,
-                bufferSize: 1024 * 1024,
+                buffer.Length,
                 useAsync: true);
 
             await using var destinationStream = new FileStream(
@@ -48,10 +55,28 @@ public class DeliveryService
                 FileMode.Create,
                 FileAccess.Write,
                 FileShare.None,
-                bufferSize: 1024 * 1024,
+                buffer.Length,
                 useAsync: true);
 
-            await sourceStream.CopyToAsync(destinationStream);
+            int bytesRead;
+
+            while ((bytesRead =
+                    await sourceStream.ReadAsync(
+                        buffer.AsMemory(0, buffer.Length))) > 0)
+            {
+                await destinationStream.WriteAsync(
+                    buffer.AsMemory(0, bytesRead));
+
+                copiedBytes += bytesRead;
+
+                if (totalBytes > 0)
+                {
+                    var percentage =
+                        copiedBytes * 100.0 / totalBytes;
+
+                    progress?.Report(percentage);
+                }
+            }
 
             await destinationStream.FlushAsync();
         }
@@ -63,8 +88,11 @@ public class DeliveryService
                 $"Copy failed: {ex.Message}");
         }
 
-        var sourceInfo = new FileInfo(sourcePath);
-        var destinationInfo = new FileInfo(destinationPath);
+        var finalSourceInfo =
+            new FileInfo(sourcePath);
+
+        var destinationInfo =
+            new FileInfo(destinationPath);
 
         if (!destinationInfo.Exists)
         {
@@ -74,13 +102,15 @@ public class DeliveryService
                 "Destination file was not created.");
         }
 
-        if (sourceInfo.Length != destinationInfo.Length)
+        if (finalSourceInfo.Length != destinationInfo.Length)
         {
             return (
                 false,
                 string.Empty,
                 "Destination file size does not match source.");
         }
+
+        progress?.Report(100);
 
         return (
             true,

@@ -237,7 +237,17 @@
 												Text="{Binding Details}"
 												FontSize="12"
 												TextWrapping="Wrap" />
+	
+											<TextBlock
+												Text="{Binding CurrentStage}"
+												FontSize="12" />
 
+											<ProgressBar
+												Minimum="0"
+												Maximum="100"
+												Value="{Binding Progress}"
+												Height="8" />
+										
 										</StackPanel>
 
 										<TextBlock
