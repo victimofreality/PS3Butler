@@ -1,4 +1,6 @@
-﻿namespace PS3Butler.Configuration;
+﻿using System.IO;
+
+namespace PS3Butler.Configuration;
 
 public class AppSettings
 {
@@ -13,6 +15,12 @@ public class AppSettings
 
     public string RedumpKeysPath { get; set; } =
         @"C:\PS3Tools\Keys";
+
+    public string WorkDirectory { get; set; } =
+        Path.Combine(Path.GetTempPath(), "PS3Butler");
+
+    public string DefaultDestinationPath { get; set; } =
+        string.Empty;
 
     public int Ps3DecThreadCount { get; set; } = 32;
 }

@@ -87,6 +87,33 @@
 							Content="Browse..."
 							Command="{Binding BrowseRedumpKeysCommand}" />
 					</Grid>
+
+					<TextBlock Text="Work directory" />
+
+					<Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+						<TextBox
+							Grid.Column="0"
+							Text="{Binding WorkDirectory}" />
+
+						<Button
+							Grid.Column="1"
+							Content="Browse..."
+							Command="{Binding BrowseWorkDirectoryCommand}" />
+					</Grid>
+
+					<TextBlock Text="Default destination" />
+
+					<Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+						<TextBox
+							Grid.Column="0"
+							Text="{Binding DefaultDestinationPath}" />
+
+						<Button
+							Grid.Column="1"
+							Content="Browse..."
+							Command="{Binding BrowseDefaultDestinationCommand}" />
+					</Grid>					
+			
 					<TextBlock Text="PS3Dec thread count" />
 
 					<NumericUpDown

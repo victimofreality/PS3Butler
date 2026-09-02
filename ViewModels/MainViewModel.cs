@@ -38,6 +38,12 @@ public partial class MainViewModel : ViewModelBase
     public partial int Ps3DecThreadCount { get; set; }
 
     [ObservableProperty]
+    public partial string WorkDirectory { get; set; }
+
+    [ObservableProperty]
+    public partial string DefaultDestinationPath { get; set; }
+
+    [ObservableProperty]
     public partial string SettingsStatus { get; set; } = string.Empty;
 
     public string SettingsLocation => _settingsService.SettingsFilePath;
@@ -56,6 +62,8 @@ public partial class MainViewModel : ViewModelBase
         ClassicPs3DecPath = _settings.ClassicPs3DecPath;
         SevenZipPath = _settings.SevenZipPath;
         RedumpKeysPath = _settings.RedumpKeysPath;
+        WorkDirectory = _settings.WorkDirectory;
+        DefaultDestinationPath = _settings.DefaultDestinationPath;
         Ps3DecThreadCount = _settings.Ps3DecThreadCount;
 
         RefreshToolStatus();
@@ -91,6 +99,16 @@ public partial class MainViewModel : ViewModelBase
             errors.Add("PS3Dec thread count must be between 1 and 256.");
         }
 
+        if (string.IsNullOrWhiteSpace(WorkDirectory))
+        {
+            errors.Add("Work directory cannot be empty.");
+        }
+
+        if (string.IsNullOrWhiteSpace(DefaultDestinationPath))
+        {
+            errors.Add("Default destination cannot be empty.");
+        }
+
         if (errors.Count > 0)
         {
             SettingsStatus = "Not saved: " + string.Join(" ", errors);
@@ -102,6 +120,8 @@ public partial class MainViewModel : ViewModelBase
         _settings.SevenZipPath = SevenZipPath;
         _settings.RedumpKeysPath = RedumpKeysPath;
         _settings.Ps3DecThreadCount = Ps3DecThreadCount;
+        _settings.WorkDirectory = WorkDirectory;
+        _settings.DefaultDestinationPath = DefaultDestinationPath;
 
         _settingsService.Save(_settings);
 
@@ -109,6 +129,7 @@ public partial class MainViewModel : ViewModelBase
 
         RefreshToolStatus();
     }
+
     [RelayCommand]
     private async Task BrowseRedrrxPs3Dec()
     {
@@ -139,6 +160,38 @@ public partial class MainViewModel : ViewModelBase
         if (path is not null)
         {
             SevenZipPath = path;
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseWorkDirectory()
+    {
+        var folders = await _window.StorageProvider.OpenFolderPickerAsync(
+            new FolderPickerOpenOptions
+            {
+                Title = "Select work directory",
+                AllowMultiple = false
+            });
+
+        if (folders.Count > 0)
+        {
+            WorkDirectory = folders[0].Path.LocalPath;
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseDefaultDestination()
+    {
+        var folders = await _window.StorageProvider.OpenFolderPickerAsync(
+            new FolderPickerOpenOptions
+            {
+                Title = "Select default destination",
+                AllowMultiple = false
+            });
+
+        if (folders.Count > 0)
+        {
+            DefaultDestinationPath = folders[0].Path.LocalPath;
         }
     }
 
