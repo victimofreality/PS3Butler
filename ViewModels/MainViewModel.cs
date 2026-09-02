@@ -5,7 +5,9 @@ using CommunityToolkit.Mvvm.Input;
 using PS3Butler.Configuration;
 using PS3Butler.Models;
 using PS3Butler.Services;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace PS3Butler.ViewModels;
@@ -62,6 +64,39 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void SaveSettings()
     {
+        var errors = new List<string>();
+
+        if (!File.Exists(RedrrxPs3DecPath))
+        {
+            errors.Add("PS3Dec (Redrrx) executable not found.");
+        }
+
+        if (!File.Exists(ClassicPs3DecPath))
+        {
+            errors.Add("PS3Dec (Classic) executable not found.");
+        }
+
+        if (!File.Exists(SevenZipPath))
+        {
+            errors.Add("7-Zip executable not found.");
+        }
+
+        if (!Directory.Exists(RedumpKeysPath))
+        {
+            errors.Add("Redump key directory not found.");
+        }
+
+        if (Ps3DecThreadCount < 1 || Ps3DecThreadCount > 256)
+        {
+            errors.Add("PS3Dec thread count must be between 1 and 256.");
+        }
+
+        if (errors.Count > 0)
+        {
+            SettingsStatus = "Not saved: " + string.Join(" ", errors);
+            return;
+        }
+
         _settings.RedrrxPs3DecPath = RedrrxPs3DecPath;
         _settings.ClassicPs3DecPath = ClassicPs3DecPath;
         _settings.SevenZipPath = SevenZipPath;
@@ -74,7 +109,6 @@ public partial class MainViewModel : ViewModelBase
 
         RefreshToolStatus();
     }
-
     [RelayCommand]
     private async Task BrowseRedrrxPs3Dec()
     {
