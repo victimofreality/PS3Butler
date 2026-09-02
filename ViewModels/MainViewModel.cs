@@ -214,6 +214,9 @@ public partial class MainViewModel : ViewModelBase
             new ArchiveExtractionService(
                 SevenZipPath);
 
+        var deliveryService =
+            new DeliveryService();
+
         foreach (var job in Jobs)
         {
             if (job.Status != "Ready")
@@ -229,6 +232,7 @@ public partial class MainViewModel : ViewModelBase
             }
 
             string inputIsoPath;
+            string? temporaryExtractionDirectory = null;
 
             var extension = Path.GetExtension(job.SourcePath);
 
@@ -243,7 +247,7 @@ public partial class MainViewModel : ViewModelBase
                 job.Status = "Extracting";
                 job.Details = "Extracting ISO from archive...";
 
-                var jobWorkDirectory =
+                temporaryExtractionDirectory =
                     Path.Combine(
                         WorkDirectory,
                         Path.GetFileNameWithoutExtension(job.SourcePath));
@@ -251,7 +255,7 @@ public partial class MainViewModel : ViewModelBase
                 var extractionResult =
                     await archiveExtractionService.ExtractIsoAsync(
                         job.SourcePath,
-                        jobWorkDirectory);
+                        temporaryExtractionDirectory);
 
                 if (!extractionResult.Success)
                 {
@@ -266,21 +270,62 @@ public partial class MainViewModel : ViewModelBase
             job.Status = "Decrypting";
             job.Details = "Decrypting ISO with ps3decrs...";
 
-            var result = await ps3DecService.DecryptAsync(
-                inputIsoPath,
-                job.DiscKey,
-                WorkDirectory);
+            var decryptResult =
+                await ps3DecService.DecryptAsync(
+                    inputIsoPath,
+                    job.DiscKey,
+                    WorkDirectory);
 
-            if (!result.Success)
+            if (!decryptResult.Success)
             {
                 job.Status = "Error";
-                job.Details = result.Error;
+                job.Details = decryptResult.Error;
                 continue;
             }
 
-            job.OutputPath = result.OutputPath;
+            job.Status = "Copying";
+            job.Details = "Copying decrypted ISO to destination...";
+
+            var deliveryResult =
+                await deliveryService.CopyAsync(
+                    decryptResult.OutputPath,
+                    DefaultDestinationPath);
+
+            if (!deliveryResult.Success)
+            {
+                job.Status = "Error";
+                job.Details = deliveryResult.Error;
+                continue;
+            }
+
+            job.OutputPath = deliveryResult.DestinationPath;
+
+            try
+            {
+                if (File.Exists(decryptResult.OutputPath))
+                {
+                    File.Delete(decryptResult.OutputPath);
+                }
+
+                if (temporaryExtractionDirectory is not null &&
+                    Directory.Exists(temporaryExtractionDirectory))
+                {
+                    Directory.Delete(
+                        temporaryExtractionDirectory,
+                        recursive: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                job.Status = "Complete";
+                job.Details =
+                    $"Copied successfully, but temporary cleanup failed: {ex.Message}";
+                continue;
+            }
+
             job.Status = "Complete";
-            job.Details = $"Decrypted ISO: {result.OutputPath}";
+            job.Details =
+                $"Decrypted ISO copied to: {deliveryResult.DestinationPath}";
         }
     }
 
