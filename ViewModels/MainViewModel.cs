@@ -210,6 +210,10 @@ public partial class MainViewModel : ViewModelBase
                 RedrrxPs3DecPath,
                 Ps3DecThreadCount);
 
+        var archiveExtractionService =
+            new ArchiveExtractionService(
+                SevenZipPath);
+
         foreach (var job in Jobs)
         {
             if (job.Status != "Ready")
@@ -224,23 +228,46 @@ public partial class MainViewModel : ViewModelBase
                 continue;
             }
 
+            string inputIsoPath;
+
             var extension = Path.GetExtension(job.SourcePath);
 
-            if (!extension.Equals(
+            if (extension.Equals(
                     ".iso",
                     StringComparison.OrdinalIgnoreCase))
             {
-                job.Status = "Waiting";
-                job.Details =
-                    "Archive extraction is not implemented yet.";
-                continue;
+                inputIsoPath = job.SourcePath;
+            }
+            else
+            {
+                job.Status = "Extracting";
+                job.Details = "Extracting ISO from archive...";
+
+                var jobWorkDirectory =
+                    Path.Combine(
+                        WorkDirectory,
+                        Path.GetFileNameWithoutExtension(job.SourcePath));
+
+                var extractionResult =
+                    await archiveExtractionService.ExtractIsoAsync(
+                        job.SourcePath,
+                        jobWorkDirectory);
+
+                if (!extractionResult.Success)
+                {
+                    job.Status = "Error";
+                    job.Details = extractionResult.Error;
+                    continue;
+                }
+
+                inputIsoPath = extractionResult.IsoPath;
             }
 
             job.Status = "Decrypting";
             job.Details = "Decrypting ISO with ps3decrs...";
 
             var result = await ps3DecService.DecryptAsync(
-                job.SourcePath,
+                inputIsoPath,
                 job.DiscKey,
                 WorkDirectory);
 
