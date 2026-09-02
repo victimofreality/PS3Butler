@@ -1,4 +1,6 @@
-﻿using System;
+﻿using PS3Butler.Models;
+using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -9,7 +11,7 @@ public class DeliveryService
     public async Task<(bool Success, string DestinationPath, string Error)> CopyAsync(
         string sourcePath,
         string destinationDirectory,
-        IProgress<double>? progress = null)
+        IProgress<TransferProgress>? progress = null)
     {
         if (!File.Exists(sourcePath))
         {
@@ -38,9 +40,12 @@ public class DeliveryService
         {
             var sourceInfo = new FileInfo(sourcePath);
             var totalBytes = sourceInfo.Length;
+
             long copiedBytes = 0;
 
             var buffer = new byte[1024 * 1024];
+
+            var stopwatch = Stopwatch.StartNew();
 
             await using var sourceStream = new FileStream(
                 sourcePath,
@@ -62,23 +67,64 @@ public class DeliveryService
 
             while ((bytesRead =
                     await sourceStream.ReadAsync(
-                        buffer.AsMemory(0, buffer.Length))) > 0)
+                        buffer.AsMemory(
+                            0,
+                            buffer.Length))) > 0)
             {
                 await destinationStream.WriteAsync(
-                    buffer.AsMemory(0, bytesRead));
+                    buffer.AsMemory(
+                        0,
+                        bytesRead));
 
                 copiedBytes += bytesRead;
 
                 if (totalBytes > 0)
                 {
                     var percentage =
-                        copiedBytes * 100.0 / totalBytes;
+                        copiedBytes * 100.0 /
+                        totalBytes;
 
-                    progress?.Report(percentage);
+                    var elapsedSeconds =
+                        stopwatch.Elapsed.TotalSeconds;
+
+                    var bytesPerSecond =
+                        elapsedSeconds > 0
+                            ? copiedBytes / elapsedSeconds
+                            : 0;
+
+                    var megabytesPerSecond =
+                        bytesPerSecond /
+                        (1024 * 1024);
+
+                    TimeSpan? estimatedRemaining =
+                        null;
+
+                    if (bytesPerSecond > 0)
+                    {
+                        var remainingBytes =
+                            totalBytes - copiedBytes;
+
+                        estimatedRemaining =
+                            TimeSpan.FromSeconds(
+                                remainingBytes /
+                                bytesPerSecond);
+                    }
+
+                    progress?.Report(
+                        new TransferProgress
+                        {
+                            Percentage = percentage,
+                            MegabytesPerSecond =
+                                megabytesPerSecond,
+                            EstimatedRemaining =
+                                estimatedRemaining
+                        });
                 }
             }
 
             await destinationStream.FlushAsync();
+
+            stopwatch.Stop();
         }
         catch (Exception ex)
         {
@@ -102,7 +148,8 @@ public class DeliveryService
                 "Destination file was not created.");
         }
 
-        if (finalSourceInfo.Length != destinationInfo.Length)
+        if (finalSourceInfo.Length !=
+            destinationInfo.Length)
         {
             return (
                 false,
@@ -110,7 +157,14 @@ public class DeliveryService
                 "Destination file size does not match source.");
         }
 
-        progress?.Report(100);
+        progress?.Report(
+            new TransferProgress
+            {
+                Percentage = 100,
+                MegabytesPerSecond = 0,
+                EstimatedRemaining =
+                    TimeSpan.Zero
+            });
 
         return (
             true,

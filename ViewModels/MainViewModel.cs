@@ -343,12 +343,36 @@ public partial class MainViewModel : ViewModelBase
             job.Status = "Copying";
             job.CurrentStage = "Copying";
             job.Progress = 0;
-            job.Details = "Copying decrypted ISO to destination...";
+            job.TransferSpeedMbps = 0;
+            job.EtaText = string.Empty;
+            job.Details =
+                "Copying decrypted ISO to destination...";
 
             var copyProgress =
-                new Progress<double>(value =>
+                new Progress<TransferProgress>(value =>
                 {
-                    job.Progress = value;
+                    job.Progress =
+                        value.Percentage;
+
+                    job.TransferSpeedMbps =
+                        value.MegabytesPerSecond;
+
+                    if (value.EstimatedRemaining.HasValue)
+                    {
+                        var eta =
+                            value.EstimatedRemaining.Value;
+
+                        job.EtaText =
+                            $"Copying — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s — " +
+                            $"{eta:hh\\:mm\\:ss} remaining";
+                    }
+                    else
+                    {
+                        job.EtaText =
+                            $"Copying — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s";
+                    }
                 });
 
             var deliveryResult =

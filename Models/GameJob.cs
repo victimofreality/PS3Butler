@@ -36,4 +36,10 @@ public partial class GameJob : ObservableObject
 
     [ObservableProperty]
     public partial string CurrentStage { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial double TransferSpeedMbps { get; set; }
+
+    [ObservableProperty]
+    public partial string EtaText { get; set; } = string.Empty;
 }

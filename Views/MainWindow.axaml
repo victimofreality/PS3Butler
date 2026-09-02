@@ -247,7 +247,11 @@
 												Maximum="100"
 												Value="{Binding Progress}"
 												Height="8" />
-										
+									
+											<TextBlock
+												Text="{Binding EtaText}"
+												FontSize="12" />										
+		
 										</StackPanel>
 
 										<TextBlock
