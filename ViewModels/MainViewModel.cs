@@ -191,7 +191,7 @@ public partial class MainViewModel : ViewModelBase
             Jobs.Add(new GameJob
             {
                 SourcePath = file.Path.LocalPath,
-                Status = "Waiting"
+                Status = "Waiting",
             });
         }
 
@@ -264,6 +264,11 @@ public partial class MainViewModel : ViewModelBase
                 job.Details = "Disc key is missing.";
                 continue;
             }
+
+            var destinationPath =
+                string.IsNullOrWhiteSpace(job.DestinationOverride)
+                    ? DefaultDestinationPath
+                    : job.DestinationOverride;
 
             job.Progress = 0;
             job.CurrentStage = string.Empty;
@@ -411,11 +416,16 @@ public partial class MainViewModel : ViewModelBase
                         }
                     });
 
+                var finalIsoFileName =
+                    job.DetectedIsoName ??
+                    Path.GetFileName(job.SourcePath);
+
                 var deliveryResult =
                     await deliveryService.CopyAsync(
                         decryptResult.OutputPath,
-                        DefaultDestinationPath,
-                        copyProgress);
+                        destinationPath,
+                        copyProgress,
+                        finalIsoFileName);
 
                 if (!deliveryResult.Success)
                 {
@@ -499,7 +509,7 @@ public partial class MainViewModel : ViewModelBase
                 }
                 var finalJbDestination =
                     Path.Combine(
-                        DefaultDestinationPath,
+                        destinationPath,
                         gameFolderName);
 
                 job.Status = "Copying";

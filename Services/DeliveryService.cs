@@ -11,7 +11,8 @@ public class DeliveryService
     public async Task<(bool Success, string DestinationPath, string Error)> CopyAsync(
         string sourcePath,
         string destinationDirectory,
-        IProgress<TransferProgress>? progress = null)
+        IProgress<TransferProgress>? progress = null,
+        string? destinationFileName = null)
     {
         if (!File.Exists(sourcePath))
         {
@@ -34,7 +35,9 @@ public class DeliveryService
         var destinationPath =
             Path.Combine(
                 destinationDirectory,
-                Path.GetFileName(sourcePath));
+                string.IsNullOrWhiteSpace(destinationFileName)
+                    ? Path.GetFileName(sourcePath)
+                    : destinationFileName);
 
         try
         {
