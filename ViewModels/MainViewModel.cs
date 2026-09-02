@@ -439,4 +439,18 @@ public partial class MainViewModel : ViewModelBase
             Tools.Add(tool);
         }
     }
+
+    [RelayCommand]
+    private void ScanDestinationLibrary()
+    {
+        var destinationInspectionService =
+            new DestinationInspectionService();
+
+        var games =
+            destinationInspectionService.ScanJbGames(
+                DefaultDestinationPath);
+
+        SettingsStatus =
+            $"Destination scan found {games.Count:N0} JB game(s) with readable PARAM.SFO metadata.";
+    }
 }

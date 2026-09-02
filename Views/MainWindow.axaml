@@ -177,6 +177,10 @@
 							Command="{Binding PreflightQueueCommand}" />
 
 						<Button
+							Content="Scan Destination"
+							Command="{Binding ScanDestinationLibraryCommand}" />
+						
+						<Button
 							Content="Process Ready Jobs"
 							Command="{Binding ProcessReadyJobsCommand}" />
 

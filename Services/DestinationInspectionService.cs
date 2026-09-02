@@ -1,4 +1,6 @@
-﻿using System;
+﻿using PS3Butler.Models;
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -6,6 +8,77 @@ namespace PS3Butler.Services;
 
 public class DestinationInspectionService
 {
+    private readonly ParamSfoService _paramSfoService =
+        new();
+
+    public List<ExistingGame> ScanJbGames(
+        string destinationDirectory)
+    {
+        var games = new List<ExistingGame>();
+
+        if (string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            return games;
+        }
+
+        if (!Directory.Exists(destinationDirectory))
+        {
+            return games;
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(
+                     destinationDirectory,
+                     "*",
+                     SearchOption.TopDirectoryOnly))
+        {
+            var paramSfoPath =
+                Path.Combine(
+                    directory,
+                    "PS3_GAME",
+                    "PARAM.SFO");
+
+            if (!File.Exists(paramSfoPath))
+            {
+                continue;
+            }
+
+            var metadata =
+                _paramSfoService.Read(paramSfoPath);
+
+            if (metadata is null)
+            {
+                continue;
+            }
+
+            games.Add(new ExistingGame
+            {
+                Path = directory,
+                TitleId = metadata.TitleId,
+                Title = metadata.Title,
+                Format = "JB"
+            });
+        }
+
+        return games;
+    }
+
+    public ExistingGame? FindJbGameByTitleId(
+        string destinationDirectory,
+        string titleId)
+    {
+        if (string.IsNullOrWhiteSpace(titleId))
+        {
+            return null;
+        }
+
+        return ScanJbGames(destinationDirectory)
+            .FirstOrDefault(game =>
+                string.Equals(
+                    game.TitleId,
+                    titleId,
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
     public string? FindExistingGame(
         string destinationDirectory,
         string gameName)
@@ -31,7 +104,7 @@ public class DestinationInspectionService
         }
 
         var existingJbFolder =
-            FindExistingJbFolder(
+            FindExistingJbFolderByName(
                 destinationDirectory,
                 gameName);
 
@@ -42,14 +115,10 @@ public class DestinationInspectionService
         string destinationDirectory,
         string gameName)
     {
-        var candidates = Directory
-            .EnumerateFiles(
-                destinationDirectory,
-                "*.iso",
-                SearchOption.TopDirectoryOnly)
-            .ToList();
-
-        foreach (var path in candidates)
+        foreach (var path in Directory.EnumerateFiles(
+                     destinationDirectory,
+                     "*.iso",
+                     SearchOption.TopDirectoryOnly))
         {
             var fileName =
                 Path.GetFileNameWithoutExtension(path);
@@ -69,7 +138,7 @@ public class DestinationInspectionService
         return null;
     }
 
-    private static string? FindExistingJbFolder(
+    private static string? FindExistingJbFolderByName(
         string destinationDirectory,
         string gameName)
     {
