@@ -221,6 +221,11 @@ public partial class MainViewModel : ViewModelBase
 
         foreach (var job in Jobs)
         {
+            if (job.Status == "Complete")
+            {
+                continue;
+            }
+
             await preflightService.PreflightAsync(job);
         }
     }
@@ -228,6 +233,8 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ProcessReadyJobs()
     {
+        await PreflightQueue();
+
         var ps3DecService =
             new Ps3DecService(
                 RedrrxPs3DecPath,
