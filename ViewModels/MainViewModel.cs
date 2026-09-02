@@ -296,12 +296,18 @@ public partial class MainViewModel : ViewModelBase
             job.Progress = 0;
             job.Details = "Decrypting ISO with ps3decrs...";
 
+            var decryptProgress =
+                new Progress<double>(value =>
+                {
+                    job.Progress = value;
+                });
+
             var decryptResult =
                 await ps3DecService.DecryptAsync(
                     inputIsoPath,
                     job.DiscKey,
-                    WorkDirectory);
-
+                    WorkDirectory,
+                    decryptProgress);
             if (!decryptResult.Success)
             {
                 job.Status = "Error";

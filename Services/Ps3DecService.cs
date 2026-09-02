@@ -10,7 +10,9 @@ public class Ps3DecService
     private readonly string _executablePath;
     private readonly int _threadCount;
 
-    public Ps3DecService(string executablePath, int threadCount)
+    public Ps3DecService(
+        string executablePath,
+        int threadCount)
     {
         _executablePath = executablePath;
         _threadCount = threadCount;
@@ -19,25 +21,43 @@ public class Ps3DecService
     public async Task<(bool Success, string OutputPath, string Error)> DecryptAsync(
         string inputIsoPath,
         string discKey,
-        string outputDirectory)
+        string outputDirectory,
+        IProgress<double>? progress = null)
     {
         if (!File.Exists(_executablePath))
         {
-            return (false, string.Empty, "ps3decrs executable not found.");
+            return (
+                false,
+                string.Empty,
+                "ps3decrs executable not found.");
         }
 
         if (!File.Exists(inputIsoPath))
         {
-            return (false, string.Empty, "Input ISO not found.");
+            return (
+                false,
+                string.Empty,
+                "Input ISO not found.");
         }
 
         Directory.CreateDirectory(outputDirectory);
 
         var outputName =
-            Path.GetFileNameWithoutExtension(inputIsoPath) + ".decrypted";
+            Path.GetFileNameWithoutExtension(inputIsoPath) +
+            ".decrypted";
 
         var expectedOutputPath =
-            Path.Combine(outputDirectory, outputName + ".iso");
+            Path.Combine(
+                outputDirectory,
+                outputName + ".iso");
+
+        if (File.Exists(expectedOutputPath))
+        {
+            File.Delete(expectedOutputPath);
+        }
+
+        var inputSize =
+            new FileInfo(inputIsoPath).Length;
 
         var startInfo = new ProcessStartInfo
         {
@@ -52,7 +72,8 @@ public class Ps3DecService
         startInfo.ArgumentList.Add(discKey);
 
         startInfo.ArgumentList.Add("--tc");
-        startInfo.ArgumentList.Add(_threadCount.ToString());
+        startInfo.ArgumentList.Add(
+            _threadCount.ToString());
 
         startInfo.ArgumentList.Add("--output-dir");
         startInfo.ArgumentList.Add(outputDirectory);
@@ -70,8 +91,42 @@ public class Ps3DecService
 
         process.Start();
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
+        // Drain both streams in the background so PS3Dec cannot block
+        // because its output buffers filled up.
+        var stdoutTask =
+            process.StandardOutput.ReadToEndAsync();
+
+        var stderrTask =
+            process.StandardError.ReadToEndAsync();
+
+        while (!process.HasExited)
+        {
+            if (File.Exists(expectedOutputPath) &&
+                inputSize > 0)
+            {
+                try
+                {
+                    var outputSize =
+                        new FileInfo(expectedOutputPath).Length;
+
+                    var percentage =
+                        outputSize * 100.0 / inputSize;
+
+                    progress?.Report(
+                        Math.Clamp(
+                            percentage,
+                            0,
+                            99.9));
+                }
+                catch (IOException)
+                {
+                    // The file may briefly be unavailable while PS3Dec
+                    // is writing to it. Just try again on the next poll.
+                }
+            }
+
+            await Task.Delay(100);
+        }
 
         await process.WaitForExitAsync();
 
@@ -99,6 +154,11 @@ public class Ps3DecService
                 $"Decryption completed but expected output was not found: {expectedOutputPath}");
         }
 
-        return (true, expectedOutputPath, string.Empty);
+        progress?.Report(100);
+
+        return (
+            true,
+            expectedOutputPath,
+            string.Empty);
     }
 }
