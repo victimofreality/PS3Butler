@@ -203,6 +203,7 @@ public partial class MainViewModel : ViewModelBase
                 _keyIndexService,
                 archiveInspectionService,
                 destinationInspectionService,
+                _metadataCacheService,
                 DefaultDestinationPath);
 
         foreach (var job in Jobs)

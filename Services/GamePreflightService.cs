@@ -20,17 +20,20 @@ public class GamePreflightService
     private readonly ArchiveInspectionService _archiveInspectionService;
     private readonly DestinationInspectionService _destinationInspectionService;
     private readonly string _destinationDirectory;
+    private readonly MetadataCacheService _metadataCacheService;
 
     public GamePreflightService(
         KeyIndexService keyIndex,
         ArchiveInspectionService archiveInspectionService,
         DestinationInspectionService destinationInspectionService,
+        MetadataCacheService metadataCacheService,
         string destinationDirectory)
     {
         _keyIndex = keyIndex;
         _archiveInspectionService = archiveInspectionService;
         _destinationInspectionService = destinationInspectionService;
         _destinationDirectory = destinationDirectory;
+        _metadataCacheService = metadataCacheService;
     }
     public async Task PreflightAsync(GameJob job)
     {
@@ -97,7 +100,27 @@ public class GamePreflightService
                 $"Destination already contains: {Path.GetFileName(existingGame)}";
             return;
         }
+        var cachedMetadata =
+            _metadataCacheService.FindByGameName(gameName);
 
+        if (cachedMetadata is not null &&
+            !string.IsNullOrWhiteSpace(cachedMetadata.TitleId))
+        {
+            var existingJbGame =
+                _destinationInspectionService.FindJbGameByTitleId(
+                    _destinationDirectory,
+                    cachedMetadata.TitleId);
+
+            if (existingJbGame is not null)
+            {
+                job.TitleId = cachedMetadata.TitleId;
+                job.Status = "Already exists";
+                job.Details =
+                    $"Destination already contains {existingJbGame.Title} " +
+                    $"({existingJbGame.TitleId}) as a JB folder.";
+                return;
+            }
+        }
         var keyPath = _keyIndex.Find(gameName);
 
         if (keyPath is null)
