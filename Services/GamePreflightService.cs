@@ -1,5 +1,4 @@
-﻿using PS3Butler.Configuration;
-using PS3Butler.Models;
+﻿using PS3Butler.Models;
 using System;
 using System.IO;
 using System.Linq;
@@ -16,11 +15,11 @@ public class GamePreflightService
         ".rar"
     ];
 
-    private readonly AppSettings _settings;
+    private readonly KeyIndexService _keyIndex;
 
-    public GamePreflightService(AppSettings settings)
+    public GamePreflightService(KeyIndexService keyIndex)
     {
-        _settings = settings;
+        _keyIndex = keyIndex;
     }
 
     public void Preflight(GameJob job)
@@ -48,7 +47,7 @@ public class GamePreflightService
 
         var gameName = Path.GetFileNameWithoutExtension(job.SourcePath);
 
-        var keyPath = FindMatchingKey(gameName);
+        var keyPath = _keyIndex.Find(gameName);
 
         if (keyPath is null)
         {
@@ -60,26 +59,5 @@ public class GamePreflightService
         job.KeyPath = keyPath;
         job.Status = "Ready";
         job.Details = $"Key found: {Path.GetFileName(keyPath)}";
-    }
-
-    private string? FindMatchingKey(string gameName)
-    {
-        if (!Directory.Exists(_settings.RedumpKeysPath))
-        {
-            return null;
-        }
-
-        return Directory
-            .EnumerateFiles(_settings.RedumpKeysPath)
-            .FirstOrDefault(path =>
-                string.Equals(
-                    Path.GetExtension(path),
-                    ".dkey",
-                    StringComparison.OrdinalIgnoreCase)
-                &&
-                string.Equals(
-                    Path.GetFileNameWithoutExtension(path),
-                    gameName,
-                    StringComparison.OrdinalIgnoreCase));
     }
 }

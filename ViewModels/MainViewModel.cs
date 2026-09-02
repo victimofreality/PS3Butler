@@ -17,6 +17,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
     private readonly Window _window;
+    private readonly KeyIndexService _keyIndexService;
 
     public string Greeting { get; } = "PS3 Butler";
 
@@ -58,6 +59,8 @@ public partial class MainViewModel : ViewModelBase
 
         _settingsService = new SettingsService();
         _settings = _settingsService.Load();
+        _keyIndexService = new KeyIndexService();
+        _keyIndexService.Build(_settings.RedumpKeysPath);
 
         RedrrxPs3DecPath = _settings.RedrrxPs3DecPath;
         ClassicPs3DecPath = _settings.ClassicPs3DecPath;
@@ -182,7 +185,9 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void PreflightQueue()
     {
-        var preflightService = new GamePreflightService(_settings);
+        _keyIndexService.Build(RedumpKeysPath);
+
+        var preflightService = new GamePreflightService(_keyIndexService);
 
         foreach (var job in Jobs)
         {
