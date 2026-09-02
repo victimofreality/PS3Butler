@@ -191,10 +191,15 @@ public partial class MainViewModel : ViewModelBase
         var archiveInspectionService =
             new ArchiveInspectionService(SevenZipPath);
 
+        var destinationInspectionService =
+            new DestinationInspectionService();
+
         var preflightService =
             new GamePreflightService(
                 _keyIndexService,
-                archiveInspectionService);
+                archiveInspectionService,
+                destinationInspectionService,
+                DefaultDestinationPath);
 
         foreach (var job in Jobs)
         {

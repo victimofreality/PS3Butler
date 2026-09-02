@@ -18,15 +18,20 @@ public class GamePreflightService
 
     private readonly KeyIndexService _keyIndex;
     private readonly ArchiveInspectionService _archiveInspectionService;
+    private readonly DestinationInspectionService _destinationInspectionService;
+    private readonly string _destinationDirectory;
 
     public GamePreflightService(
         KeyIndexService keyIndex,
-        ArchiveInspectionService archiveInspectionService)
+        ArchiveInspectionService archiveInspectionService,
+        DestinationInspectionService destinationInspectionService,
+        string destinationDirectory)
     {
         _keyIndex = keyIndex;
         _archiveInspectionService = archiveInspectionService;
+        _destinationInspectionService = destinationInspectionService;
+        _destinationDirectory = destinationDirectory;
     }
-
     public async Task PreflightAsync(GameJob job)
     {
         job.KeyPath = null;
@@ -78,6 +83,19 @@ public class GamePreflightService
 
             job.DetectedIsoName = isoName;
             gameName = Path.GetFileNameWithoutExtension(isoName);
+        }
+
+        var existingIso =
+            _destinationInspectionService.FindExistingIso(
+                _destinationDirectory,
+                gameName);
+
+        if (existingIso is not null)
+        {
+            job.Status = "Already exists";
+            job.Details =
+                $"Destination already contains: {Path.GetFileName(existingIso)}";
+            return;
         }
 
         var keyPath = _keyIndex.Find(gameName);
