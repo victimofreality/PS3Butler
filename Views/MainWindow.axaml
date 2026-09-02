@@ -158,48 +158,56 @@
 
 				<StackPanel Spacing="12">
 
-					<StackPanel
-						Orientation="Horizontal"
-						Spacing="12">
+					<StackPanel Spacing="10">
 
 						<TextBlock
 							Text="Queue"
 							FontSize="20"
-							FontWeight="SemiBold"
-							VerticalAlignment="Center" />
+							FontWeight="SemiBold" />
 
-						<Button
-							Content="Add Local Games..."
-							Command="{Binding AddLocalGamesCommand}" />
+						<StackPanel
+							Orientation="Horizontal"
+							Spacing="10">
 
-						<Button
-							Content="Preflight Queue"
-							Command="{Binding PreflightQueueCommand}" />
+							<Button
+								Content="Add Local Games..."
+								Command="{Binding AddLocalGamesCommand}" />
 
-						<Button
-							Content="Scan Destination"
-							Command="{Binding ScanDestinationLibraryCommand}" />
-						
-						<Button
-							Content="Process Ready Jobs"
-							Command="{Binding ProcessReadyJobsCommand}" />
-	
-						<Button
-						Content="Remove Selected"
-						Command="{Binding RemoveSelectedJobCommand}" />
+							<Button
+								Content="Process Ready Jobs"
+								Command="{Binding ProcessReadyJobsCommand}" />
 
-						<Button
-							Content="Clear Completed"
-							Command="{Binding ClearCompletedJobsCommand}" />
+						</StackPanel>
 
-						<Button
-							Content="Clear Queue"
-							Command="{Binding ClearQueueCommand}" />					
-	
+						<StackPanel
+							Orientation="Horizontal"
+							Spacing="10">
+
+							<Button
+								Content="Preflight Queue"
+								Command="{Binding PreflightQueueCommand}" />
+
+							<Button
+								Content="Remove Selected"
+								Command="{Binding RemoveSelectedJobCommand}" />
+
+							<Button
+								Content="Clear Completed"
+								Command="{Binding ClearCompletedJobsCommand}" />
+
+							<Button
+								Content="Clear Queue"
+								Command="{Binding ClearQueueCommand}" />
+
+						</StackPanel>
+
 					</StackPanel>
 
-					<ItemsControl ItemsSource="{Binding Jobs}">
-						<ItemsControl.ItemTemplate>
+					<ListBox
+						ItemsSource="{Binding Jobs}"
+						SelectedItem="{Binding SelectedJob}">
+
+						<ListBox.ItemTemplate>
 							<DataTemplate x:DataType="models:GameJob">
 
 								<Border
@@ -208,7 +216,9 @@
 									BorderThickness="1"
 									CornerRadius="6">
 
-									<Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
+									<Grid
+										ColumnDefinitions="*,Auto"
+										ColumnSpacing="15">
 
 										<StackPanel
 											Grid.Column="0"
@@ -240,13 +250,14 @@
 								</Border>
 
 							</DataTemplate>
-						</ItemsControl.ItemTemplate>
-					</ItemsControl>
+						</ListBox.ItemTemplate>
+
+					</ListBox>
 
 				</StackPanel>
 
 			</Border>
-
+			
 			<TextBlock
                 Text="Dependency check"
                 FontSize="20"
