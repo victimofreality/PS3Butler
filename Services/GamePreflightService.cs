@@ -85,16 +85,16 @@ public class GamePreflightService
             gameName = Path.GetFileNameWithoutExtension(isoName);
         }
 
-        var existingIso =
-            _destinationInspectionService.FindExistingIso(
+        var existingGame =
+            _destinationInspectionService.FindExistingGame(
                 _destinationDirectory,
                 gameName);
 
-        if (existingIso is not null)
+        if (existingGame is not null)
         {
             job.Status = "Already exists";
             job.Details =
-                $"Destination already contains: {Path.GetFileName(existingIso)}";
+                $"Destination already contains: {Path.GetFileName(existingGame)}";
             return;
         }
 
