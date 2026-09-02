@@ -1,11 +1,11 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+using PS3Butler.Configuration;
 using PS3Butler.Models;
 using PS3Butler.Services;
 using System.Collections.ObjectModel;
 
 namespace PS3Butler.ViewModels;
 
-public partial class MainViewModel : ViewModelBase
+public class MainViewModel : ViewModelBase
 {
     public string Greeting { get; } = "PS3 Butler";
 
@@ -13,7 +13,8 @@ public partial class MainViewModel : ViewModelBase
 
     public MainViewModel()
     {
-        var toolDetectionService = new ToolDetectionService();
+        var settings = new AppSettings();
+        var toolDetectionService = new ToolDetectionService(settings);
 
         foreach (var tool in toolDetectionService.DetectTools())
         {

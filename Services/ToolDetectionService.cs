@@ -1,31 +1,39 @@
-﻿using PS3Butler.Models;
-using System.Linq;
+﻿using PS3Butler.Configuration;
+using PS3Butler.Models;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace PS3Butler.Services;
 
 public class ToolDetectionService
 {
+    private readonly AppSettings _settings;
+
+    public ToolDetectionService(AppSettings settings)
+    {
+        _settings = settings;
+    }
+
     public List<ToolStatus> DetectTools()
     {
         return
         [
             CheckFile(
                 "PS3Dec (Redrrx)",
-                @"C:\PS3Tools\ps3decrs.exe"),
+                _settings.RedrrxPs3DecPath),
 
             CheckFile(
                 "PS3Dec (Classic)",
-                @"C:\PS3Tools\PS3Dec.exe"),
+                _settings.ClassicPs3DecPath),
 
             CheckFile(
                 "7-Zip",
-                @"C:\Program Files\7-Zip\7z.exe"),
+                _settings.SevenZipPath),
 
             CheckKeyDirectory(
                 "Redump Keys",
-                @"C:\PS3Tools\Keys")
+                _settings.RedumpKeysPath)
         ];
     }
 
@@ -44,7 +52,10 @@ public class ToolDetectionService
         var exists = Directory.Exists(path);
 
         var keyCount = exists
-            ? Directory.EnumerateFiles(path, "*.dkey", SearchOption.TopDirectoryOnly).Count()
+            ? Directory.EnumerateFiles(
+                path,
+                "*.dkey",
+                SearchOption.TopDirectoryOnly).Count()
             : 0;
 
         return new ToolStatus
