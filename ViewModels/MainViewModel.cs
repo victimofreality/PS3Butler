@@ -19,6 +19,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly AppSettings _settings;
     private readonly Window _window;
     private readonly KeyIndexService _keyIndexService;
+    private readonly MetadataCacheService _metadataCacheService;
 
     public string Greeting { get; } = "PS3 Butler";
 
@@ -59,9 +60,12 @@ public partial class MainViewModel : ViewModelBase
         _window = window;
 
         _settingsService = new SettingsService();
+        _metadataCacheService =
+            new MetadataCacheService(_settingsService);
         _settings = _settingsService.Load();
         _keyIndexService = new KeyIndexService();
         _keyIndexService.Build(_settings.RedumpKeysPath);
+
 
         RedrrxPs3DecPath = _settings.RedrrxPs3DecPath;
         ClassicPs3DecPath = _settings.ClassicPs3DecPath;
@@ -222,6 +226,10 @@ public partial class MainViewModel : ViewModelBase
         var deliveryService =
             new DeliveryService();
 
+        var decryptedIsoMetadataService =
+            new DecryptedIsoMetadataService(
+                SevenZipPath);
+
         foreach (var job in Jobs)
         {
             if (job.Status != "Ready")
@@ -287,7 +295,25 @@ public partial class MainViewModel : ViewModelBase
                 job.Details = decryptResult.Error;
                 continue;
             }
+            var metadata =
+                await decryptedIsoMetadataService.ReadMetadataAsync(
+                    decryptResult.OutputPath,
+                    WorkDirectory);
 
+            if (metadata is not null &&
+                !string.IsNullOrWhiteSpace(metadata.TitleId))
+            {
+                var gameName =
+                    Path.GetFileNameWithoutExtension(
+                        job.DetectedIsoName ?? job.SourcePath);
+
+                _metadataCacheService.AddOrUpdate(
+                    gameName,
+                    metadata.TitleId,
+                    metadata.Title);
+
+                job.TitleId = metadata.TitleId;
+            }
             job.Status = "Copying";
             job.Details = "Copying decrypted ISO to destination...";
 
@@ -453,39 +479,5 @@ public partial class MainViewModel : ViewModelBase
         SettingsStatus =
             $"Destination scan found {games.Count:N0} JB game(s) with readable PARAM.SFO metadata.";
     }
-
-    [RelayCommand]
-    private async Task TestIsoMetadata()
-    {
-        var files = await _window.StorageProvider.OpenFilePickerAsync(
-            new FilePickerOpenOptions
-            {
-                Title = "Select a PS3 ISO",
-                AllowMultiple = false,
-                FileTypeFilter =
-                [
-                    new FilePickerFileType("PS3 ISO")
-                {
-                    Patterns = ["*.iso"]
-                }
-                ]
-            });
-
-        if (files.Count == 0)
-        {
-            return;
-        }
-
-        var isoMetadataService =
-            new IsoMetadataService(SevenZipPath);
-
-        var titleId =
-            await isoMetadataService.ReadTitleIdAsync(
-                files[0].Path.LocalPath,
-                WorkDirectory);
-
-        SettingsStatus = titleId is null
-            ? "Could not read TITLE_ID from ISO."
-            : $"ISO TITLE_ID: {titleId}";
-    }
+   
 }
