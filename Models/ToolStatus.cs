@@ -8,6 +8,23 @@ public class ToolStatus
 
     public bool IsAvailable { get; set; }
 
-    public string StatusText =>
-        IsAvailable ? $"Found: {Path}" : $"Not found: {Path}";
+    public int? ItemCount { get; set; }
+
+    public string StatusText
+    {
+        get
+        {
+            if (!IsAvailable)
+            {
+                return $"Not found: {Path}";
+            }
+
+            if (ItemCount.HasValue)
+            {
+                return $"Found: {Path} ({ItemCount.Value:N0} keys)";
+            }
+
+            return $"Found: {Path}";
+        }
+    }
 }

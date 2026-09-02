@@ -1,4 +1,5 @@
 ﻿using PS3Butler.Models;
+using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 
@@ -22,7 +23,7 @@ public class ToolDetectionService
                 "7-Zip",
                 @"C:\Program Files\7-Zip\7z.exe"),
 
-            CheckDirectory(
+            CheckKeyDirectory(
                 "Redump Keys",
                 @"C:\PS3Tools\Keys")
         ];
@@ -38,13 +39,20 @@ public class ToolDetectionService
         };
     }
 
-    private static ToolStatus CheckDirectory(string name, string path)
+    private static ToolStatus CheckKeyDirectory(string name, string path)
     {
+        var exists = Directory.Exists(path);
+
+        var keyCount = exists
+            ? Directory.EnumerateFiles(path, "*.dkey", SearchOption.TopDirectoryOnly).Count()
+            : 0;
+
         return new ToolStatus
         {
             Name = name,
             Path = path,
-            IsAvailable = Directory.Exists(path)
+            IsAvailable = exists,
+            ItemCount = exists ? keyCount : null
         };
     }
 }
