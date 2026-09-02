@@ -23,4 +23,6 @@ public class AppSettings
         string.Empty;
 
     public int Ps3DecThreadCount { get; set; } = 32;
+
+    public bool RemovePs3Update { get; set; } = true;
 }

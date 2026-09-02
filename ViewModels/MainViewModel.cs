@@ -54,6 +54,9 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial string SettingsStatus { get; set; } = string.Empty;
 
+    [ObservableProperty]
+    public partial bool RemovePs3Update { get; set; }
+
     public string SettingsLocation => _settingsService.SettingsFilePath;
 
     public string SettingsMode =>
@@ -78,6 +81,7 @@ public partial class MainViewModel : ViewModelBase
         WorkDirectory = _settings.WorkDirectory;
         DefaultDestinationPath = _settings.DefaultDestinationPath;
         Ps3DecThreadCount = _settings.Ps3DecThreadCount;
+        RemovePs3Update = _settings.RemovePs3Update;
 
         RefreshToolStatus();
     }
@@ -135,6 +139,7 @@ public partial class MainViewModel : ViewModelBase
         _settings.Ps3DecThreadCount = Ps3DecThreadCount;
         _settings.WorkDirectory = WorkDirectory;
         _settings.DefaultDestinationPath = DefaultDestinationPath;
+        _settings.RemovePs3Update = RemovePs3Update;
 
         _settingsService.Save(_settings);
 
@@ -478,6 +483,20 @@ public partial class MainViewModel : ViewModelBase
                     continue;
                 }
 
+                if (RemovePs3Update)
+                {
+                    var ps3UpdateDirectory =
+                        Path.Combine(
+                            temporaryJbDirectory,
+                            "PS3_UPDATE");
+
+                    if (Directory.Exists(ps3UpdateDirectory))
+                    {
+                        Directory.Delete(
+                            ps3UpdateDirectory,
+                            recursive: true);
+                    }
+                }
                 var finalJbDestination =
                     Path.Combine(
                         DefaultDestinationPath,

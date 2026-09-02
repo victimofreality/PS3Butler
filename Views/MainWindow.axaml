@@ -124,6 +124,10 @@
                         Width="140"
                         HorizontalAlignment="Left" />
 
+					<CheckBox
+						Content="Remove PS3_UPDATE from JB folder output"
+						IsChecked="{Binding RemovePs3Update}" />					
+					
 					<StackPanel
                         Orientation="Horizontal"
                         Spacing="12">
