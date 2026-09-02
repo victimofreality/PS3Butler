@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace PS3Butler.ViewModels;
@@ -25,6 +26,9 @@ public partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<ToolStatus> Tools { get; } = [];
     public ObservableCollection<GameJob> Jobs { get; } = [];
+
+    [ObservableProperty]
+    public partial GameJob? SelectedJob { get; set; }
 
     [ObservableProperty]
     public partial string RedrrxPs3DecPath { get; set; }
@@ -185,8 +189,12 @@ public partial class MainViewModel : ViewModelBase
                 Status = "Waiting"
             });
         }
-    }
 
+        if (files.Count > 0)
+        {
+            await PreflightQueue();
+        }
+    }
     [RelayCommand]
     private async Task PreflightQueue()
     {
@@ -480,5 +488,38 @@ public partial class MainViewModel : ViewModelBase
         SettingsStatus =
             $"Destination scan found {games.Count:N0} JB game(s) with readable PARAM.SFO metadata.";
     }
-   
+    [RelayCommand]
+    private void RemoveSelectedJob()
+    {
+        if (SelectedJob is null)
+        {
+            return;
+        }
+
+        Jobs.Remove(SelectedJob);
+        SelectedJob = null;
+    }
+
+    [RelayCommand]
+    private void ClearCompletedJobs()
+    {
+        var completedJobs = Jobs
+            .Where(job =>
+                job.Status == "Complete" ||
+                job.Status == "Already exists")
+            .ToList();
+
+        foreach (var job in completedJobs)
+        {
+            Jobs.Remove(job);
+        }
+    }
+
+    [RelayCommand]
+    private void ClearQueue()
+    {
+        Jobs.Clear();
+        SelectedJob = null;
+    }
+
 }

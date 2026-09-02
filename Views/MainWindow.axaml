@@ -183,7 +183,19 @@
 						<Button
 							Content="Process Ready Jobs"
 							Command="{Binding ProcessReadyJobsCommand}" />
-						
+	
+						<Button
+						Content="Remove Selected"
+						Command="{Binding RemoveSelectedJobCommand}" />
+
+						<Button
+							Content="Clear Completed"
+							Command="{Binding ClearCompletedJobsCommand}" />
+
+						<Button
+							Content="Clear Queue"
+							Command="{Binding ClearQueueCommand}" />					
+	
 					</StackPanel>
 
 					<ItemsControl ItemsSource="{Binding Jobs}">
@@ -240,34 +252,54 @@
                 FontSize="20"
                 FontWeight="SemiBold" />
 
-			<ItemsControl ItemsSource="{Binding Tools}">
-				<ItemsControl.ItemTemplate>
-					<DataTemplate x:DataType="models:ToolStatus">
+			<ListBox
+    ItemsSource="{Binding Jobs}"
+    SelectedItem="{Binding SelectedJob}">
+
+				<ListBox.ItemTemplate>
+					<DataTemplate x:DataType="models:GameJob">
 
 						<Border
-                            Margin="0,0,0,10"
-                            Padding="15"
-                            BorderThickness="1"
-                            CornerRadius="6">
+							Margin="0,0,0,8"
+							Padding="12"
+							BorderThickness="1"
+							CornerRadius="6">
 
-							<StackPanel Spacing="5">
+							<Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
+
+								<StackPanel
+									Grid.Column="0"
+									Spacing="4">
+
+									<TextBlock
+										Text="{Binding DisplayName}"
+										FontWeight="SemiBold" />
+
+									<TextBlock
+										Text="{Binding SourcePath}"
+										FontSize="12"
+										TextWrapping="Wrap" />
+
+									<TextBlock
+										Text="{Binding Details}"
+										FontSize="12"
+										TextWrapping="Wrap" />
+
+								</StackPanel>
 
 								<TextBlock
-                                    Text="{Binding Name}"
-                                    FontSize="16"
-                                    FontWeight="SemiBold" />
+									Grid.Column="1"
+									Text="{Binding Status}"
+									VerticalAlignment="Center" />
 
-								<TextBlock
-                                    Text="{Binding StatusText}"
-                                    TextWrapping="Wrap" />
-
-							</StackPanel>
+							</Grid>
 
 						</Border>
 
 					</DataTemplate>
-				</ItemsControl.ItemTemplate>
-			</ItemsControl>
+				</ListBox.ItemTemplate>
+
+			</ListBox>
 
 		</StackPanel>
 	</ScrollViewer>
