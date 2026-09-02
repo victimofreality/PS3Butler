@@ -21,6 +21,7 @@ public partial class MainViewModel : ViewModelBase
     public string Greeting { get; } = "PS3 Butler";
 
     public ObservableCollection<ToolStatus> Tools { get; } = [];
+    public ObservableCollection<GameJob> Jobs { get; } = [];
 
     [ObservableProperty]
     public partial string RedrrxPs3DecPath { get; set; }
@@ -138,6 +139,54 @@ public partial class MainViewModel : ViewModelBase
         if (path is not null)
         {
             RedrrxPs3DecPath = path;
+        }
+    }
+
+    [RelayCommand]
+    private async Task AddLocalGames()
+    {
+        var files = await _window.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "Add PS3 game files",
+                AllowMultiple = true,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("PS3 game files and archives")
+                {
+                    Patterns =
+                    [
+                        "*.iso",
+                        "*.zip",
+                        "*.7z",
+                        "*.rar"
+                    ]
+                },
+                new FilePickerFileType("All files")
+                {
+                    Patterns = ["*"]
+                }
+                ]
+            });
+
+        foreach (var file in files)
+        {
+            Jobs.Add(new GameJob
+            {
+                SourcePath = file.Path.LocalPath,
+                Status = "Waiting"
+            });
+        }
+    }
+
+    [RelayCommand]
+    private void PreflightQueue()
+    {
+        var preflightService = new GamePreflightService(_settings);
+
+        foreach (var job in Jobs)
+        {
+            preflightService.Preflight(job);
         }
     }
 

@@ -150,7 +150,83 @@
 				</StackPanel>
 
 			</Border>
+		
+			<Border
+				Padding="18"
+				BorderThickness="1"
+				CornerRadius="8">
 
+				<StackPanel Spacing="12">
+
+					<StackPanel
+						Orientation="Horizontal"
+						Spacing="12">
+
+						<TextBlock
+							Text="Queue"
+							FontSize="20"
+							FontWeight="SemiBold"
+							VerticalAlignment="Center" />
+
+						<Button
+							Content="Add Local Games..."
+							Command="{Binding AddLocalGamesCommand}" />
+
+						<Button
+							Content="Preflight Queue"
+							Command="{Binding PreflightQueueCommand}" />
+
+					</StackPanel>
+					
+					<ItemsControl ItemsSource="{Binding Jobs}">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="models:GameJob">
+
+								<Border
+									Margin="0,0,0,8"
+									Padding="12"
+									BorderThickness="1"
+									CornerRadius="6">
+
+									<Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
+
+										<StackPanel
+											Grid.Column="0"
+											Spacing="4">
+
+											<TextBlock
+												Text="{Binding DisplayName}"
+												FontWeight="SemiBold" />
+
+											<TextBlock
+												Text="{Binding SourcePath}"
+												FontSize="12"
+												TextWrapping="Wrap" />
+
+											<TextBlock
+												Text="{Binding Details}"
+												FontSize="12"
+												TextWrapping="Wrap" />
+
+										</StackPanel>
+
+										<TextBlock
+											Grid.Column="1"
+											Text="{Binding Status}"
+											VerticalAlignment="Center" />
+
+									</Grid>
+
+								</Border>
+
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+
+				</StackPanel>
+
+			</Border>
+			
 			<TextBlock
                 Text="Dependency check"
                 FontSize="20"
