@@ -1,0 +1,28 @@
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using PS3Butler.ViewModels;
+using PS3Butler.Views;
+
+namespace PS3Butler;
+
+public partial class App : Application
+{
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+    }
+
+    public override void OnFrameworkInitializationCompleted()
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.MainWindow = new MainWindow
+            {
+                DataContext = new MainViewModel(),
+            };
+        }
+
+        base.OnFrameworkInitializationCompleted();
+    }
+}
