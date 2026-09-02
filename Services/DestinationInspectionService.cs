@@ -111,6 +111,43 @@ public class DestinationInspectionService
         return existingJbFolder;
     }
 
+    public string? FindExistingEncryptedIsoWithKey(
+        string destinationDirectory,
+        string gameName)
+    {
+        if (string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            return null;
+        }
+
+        if (!Directory.Exists(destinationDirectory))
+        {
+            return null;
+        }
+
+        var existingIso =
+            FindExistingIso(
+                destinationDirectory,
+                gameName);
+
+        if (existingIso is null)
+        {
+            return null;
+        }
+
+        var keyPath =
+            Path.ChangeExtension(
+                existingIso,
+                ".dkey");
+
+        if (!File.Exists(keyPath))
+        {
+            return null;
+        }
+
+        return existingIso;
+    }
+
     private static string? FindExistingIso(
         string destinationDirectory,
         string gameName)

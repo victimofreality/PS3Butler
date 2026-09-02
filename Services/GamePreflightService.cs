@@ -88,27 +88,51 @@ public class GamePreflightService
             gameName = Path.GetFileNameWithoutExtension(isoName);
         }
 
-        var existingGame =
-            _destinationInspectionService.FindExistingGame(
-                _destinationDirectory,
-                gameName);
+        var destinationDirectory =
+            string.IsNullOrWhiteSpace(job.DestinationOverride)
+                ? _destinationDirectory
+                : job.DestinationOverride;
 
-        if (existingGame is not null)
+        if (job.OutputFormat == OutputFormat.EncryptedIsoWithKey)
         {
-            job.Status = "Already exists";
-            job.Details =
-                $"Destination already contains: {Path.GetFileName(existingGame)}";
-            return;
+            var existingEncryptedIso =
+                _destinationInspectionService.FindExistingEncryptedIsoWithKey(
+                    destinationDirectory,
+                    gameName);
+
+            if (existingEncryptedIso is not null)
+            {
+                job.Status = "Already exists";
+                job.Details =
+                    $"Destination already contains encrypted ISO + key: " +
+                    $"{Path.GetFileName(existingEncryptedIso)}";
+                return;
+            }
         }
+        else
+        {
+            var existingGame =
+                _destinationInspectionService.FindExistingGame(
+                    destinationDirectory,
+                    gameName);
+
+            if (existingGame is not null)
+            {
+                job.Status = "Already exists";
+                job.Details =
+                    $"Destination already contains: {Path.GetFileName(existingGame)}";
+                return;
+            }
+        }
+
         var cachedMetadata =
             _metadataCacheService.FindByGameName(gameName);
-
         if (cachedMetadata is not null &&
             !string.IsNullOrWhiteSpace(cachedMetadata.TitleId))
         {
             var existingJbGame =
                 _destinationInspectionService.FindJbGameByTitleId(
-                    _destinationDirectory,
+                    destinationDirectory,
                     cachedMetadata.TitleId);
 
             if (existingJbGame is not null)
