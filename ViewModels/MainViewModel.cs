@@ -1048,6 +1048,38 @@ public partial class MainViewModel : ViewModelBase
         SettingsStatus =
             $"Destination scan found {games.Count:N0} JB game(s) with readable PARAM.SFO metadata.";
     }
+
+    [RelayCommand]
+    private async Task RetrySelectedJob()
+    {
+        if (SelectedJob is null)
+        {
+            return;
+        }
+
+        if (SelectedJob.Status != "Error" &&
+            SelectedJob.Status != "Missing key" &&
+            SelectedJob.Status != "Invalid key")
+        {
+            return;
+        }
+
+        SelectedJob.Status = "Waiting";
+        SelectedJob.Details = string.Empty;
+        SelectedJob.CurrentStage = string.Empty;
+        SelectedJob.Progress = 0;
+        SelectedJob.TransferSpeedMbps = 0;
+        SelectedJob.EtaText = string.Empty;
+
+        if (SelectedJob.SourceType == GameSourceType.Url)
+        {
+            SelectedJob.LocalSourcePath = null;
+            SelectedJob.Details = "Waiting to download.";
+        }
+
+        await PreflightQueue();
+    }
+
     [RelayCommand]
     private void RemoveSelectedJob()
     {

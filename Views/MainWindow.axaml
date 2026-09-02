@@ -218,7 +218,11 @@
 							<Button
 								Content="Preflight Queue"
 								Command="{Binding PreflightQueueCommand}" />
-
+							
+							<Button
+								Content="Retry Selected"
+								Command="{Binding RetrySelectedJobCommand}" />
+							
 							<Button
 								Content="Remove Selected"
 								Command="{Binding RemoveSelectedJobCommand}" />
