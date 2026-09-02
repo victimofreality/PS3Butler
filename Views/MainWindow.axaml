@@ -180,7 +180,15 @@
 							<Button
 								Content="Process Ready Jobs"
 								Command="{Binding ProcessReadyJobsCommand}" />
+							
+							<Button
+								Content="Pause Download"
+								Command="{Binding PauseDownloadCommand}" />
 
+							<Button
+								Content="Resume Download"
+								Command="{Binding ResumeDownloadCommand}" />
+							
 							<Button
 								Content="Cancel Download"
 								Command="{Binding CancelDownloadCommand}" />

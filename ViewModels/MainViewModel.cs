@@ -23,6 +23,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly KeyIndexService _keyIndexService;
     private readonly MetadataCacheService _metadataCacheService;
     private CancellationTokenSource? _downloadCancellationTokenSource;
+    private PauseTokenSource? _downloadPauseTokenSource;
 
     public string Greeting { get; } = "PS3 Butler";
 
@@ -282,6 +283,9 @@ public partial class MainViewModel : ViewModelBase
         _downloadCancellationTokenSource =
             new CancellationTokenSource();
 
+        _downloadPauseTokenSource =
+            new PauseTokenSource();
+
         foreach (var job in Jobs)
         {
             if (job.SourceType != GameSourceType.Url ||
@@ -342,7 +346,8 @@ public partial class MainViewModel : ViewModelBase
                     job.SourcePath,
                     downloadDirectory,
                     downloadProgress,
-                    _downloadCancellationTokenSource.Token);
+                    _downloadCancellationTokenSource.Token,
+                    _downloadPauseTokenSource);
 
             if (!downloadResult.Success)
             {
@@ -1068,6 +1073,17 @@ public partial class MainViewModel : ViewModelBase
         {
             Jobs.Remove(job);
         }
+    }
+    [RelayCommand]
+    private void PauseDownload()
+    {
+        _downloadPauseTokenSource?.Pause();
+    }
+
+    [RelayCommand]
+    private void ResumeDownload()
+    {
+        _downloadPauseTokenSource?.Resume();
     }
 
     [RelayCommand]

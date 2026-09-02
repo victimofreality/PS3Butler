@@ -16,8 +16,8 @@ public class DownloadService
         string url,
         string destinationDirectory,
         IProgress<TransferProgress>? progress = null,
-        CancellationToken cancellationToken = default)
-
+        CancellationToken cancellationToken = default,
+        PauseTokenSource? pauseTokenSource = null)
     {
         if (!Uri.TryCreate(
                 url,
@@ -110,7 +110,12 @@ public class DownloadService
                             buffer.Length),
                         cancellationToken)) > 0)
             {
-                
+                if (pauseTokenSource is not null)
+                {
+                    await pauseTokenSource.WaitWhilePausedAsync(
+                        cancellationToken);
+                }
+
                 await destinationStream.WriteAsync(
                     buffer.AsMemory(
                         0,
