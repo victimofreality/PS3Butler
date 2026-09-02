@@ -31,6 +31,7 @@ public class GamePreflightService
     {
         job.KeyPath = null;
         job.DetectedIsoName = null;
+        job.DiscKey = null;
         job.Details = string.Empty;
 
         if (!File.Exists(job.SourcePath))
@@ -90,8 +91,20 @@ public class GamePreflightService
         }
 
         job.KeyPath = keyPath;
-        job.Status = "Ready";
 
+        if (!KeyIndexService.TryReadKey(
+                keyPath,
+                out var discKey,
+                out var keyError))
+        {
+            job.Status = "Invalid key";
+            job.Details =
+                $"{Path.GetFileName(keyPath)}: {keyError}";
+            return;
+        }
+
+        job.DiscKey = discKey;
+        job.Status = "Ready";
         if (extension.Equals(
                 ".iso",
                 StringComparison.OrdinalIgnoreCase))

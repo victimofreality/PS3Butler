@@ -40,4 +40,48 @@ public class KeyIndexService
             ? path
             : null;
     }
+
+    public static bool TryReadKey(
+        string keyPath,
+        out string key,
+        out string error)
+    {
+        key = string.Empty;
+        error = string.Empty;
+
+        if (!File.Exists(keyPath))
+        {
+            error = "Key file does not exist.";
+            return false;
+        }
+
+        try
+        {
+            var contents = File.ReadAllText(keyPath).Trim();
+
+            if (contents.Length != 32)
+            {
+                error =
+                    $"Key is {contents.Length} characters long; expected 32.";
+                return false;
+            }
+
+            foreach (var character in contents)
+            {
+                if (!Uri.IsHexDigit(character))
+                {
+                    error = "Key contains non-hexadecimal characters.";
+                    return false;
+                }
+            }
+
+            key = contents.ToUpperInvariant();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not read key file: {ex.Message}";
+            return false;
+        }
+    }
 }

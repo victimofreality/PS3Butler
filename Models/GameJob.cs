@@ -21,4 +21,7 @@ public partial class GameJob : ObservableObject
 
     [ObservableProperty]
     public partial string? DetectedIsoName { get; set; }
+
+    [ObservableProperty]
+    public partial string? DiscKey { get; set; }
 }
