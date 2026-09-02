@@ -453,4 +453,39 @@ public partial class MainViewModel : ViewModelBase
         SettingsStatus =
             $"Destination scan found {games.Count:N0} JB game(s) with readable PARAM.SFO metadata.";
     }
+
+    [RelayCommand]
+    private async Task TestIsoMetadata()
+    {
+        var files = await _window.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "Select a PS3 ISO",
+                AllowMultiple = false,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("PS3 ISO")
+                {
+                    Patterns = ["*.iso"]
+                }
+                ]
+            });
+
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        var isoMetadataService =
+            new IsoMetadataService(SevenZipPath);
+
+        var titleId =
+            await isoMetadataService.ReadTitleIdAsync(
+                files[0].Path.LocalPath,
+                WorkDirectory);
+
+        SettingsStatus = titleId is null
+            ? "Could not read TITLE_ID from ISO."
+            : $"ISO TITLE_ID: {titleId}";
+    }
 }

@@ -183,7 +183,7 @@
 						<Button
 							Content="Process Ready Jobs"
 							Command="{Binding ProcessReadyJobsCommand}" />
-
+						
 					</StackPanel>
 
 					<ItemsControl ItemsSource="{Binding Jobs}">
