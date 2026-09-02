@@ -183,15 +183,21 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void PreflightQueue()
+    private async Task PreflightQueue()
     {
         _keyIndexService.Build(RedumpKeysPath);
 
-        var preflightService = new GamePreflightService(_keyIndexService);
+        var archiveInspectionService =
+            new ArchiveInspectionService(SevenZipPath);
+
+        var preflightService =
+            new GamePreflightService(
+                _keyIndexService,
+                archiveInspectionService);
 
         foreach (var job in Jobs)
         {
-            preflightService.Preflight(job);
+            await preflightService.PreflightAsync(job);
         }
     }
 

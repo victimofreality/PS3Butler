@@ -18,4 +18,7 @@ public partial class GameJob : ObservableObject
 
     [ObservableProperty]
     public partial string? KeyPath { get; set; }
+
+    [ObservableProperty]
+    public partial string? DetectedIsoName { get; set; }
 }
