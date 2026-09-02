@@ -548,6 +548,25 @@ public partial class MainViewModel : ViewModelBase
                             temporaryExtractionDirectory,
                             recursive: true);
                     }
+
+                    if (job.SourceType == GameSourceType.Url &&
+                        !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
+                        File.Exists(job.LocalSourcePath))
+                    {
+                        var downloadDirectory =
+                            Path.GetDirectoryName(job.LocalSourcePath);
+
+                        File.Delete(job.LocalSourcePath);
+
+                        if (!string.IsNullOrWhiteSpace(downloadDirectory) &&
+                            Directory.Exists(downloadDirectory) &&
+                            !Directory.EnumerateFileSystemEntries(downloadDirectory).Any())
+                        {
+                            Directory.Delete(downloadDirectory);
+                        }
+
+                        job.LocalSourcePath = null;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -559,7 +578,6 @@ public partial class MainViewModel : ViewModelBase
                         $"Encrypted ISO and key copied successfully, but temporary cleanup failed: {ex.Message}";
                     continue;
                 }
-
                 job.Status = "Complete";
                 job.CurrentStage = "Complete";
                 job.Progress = 100;
@@ -833,6 +851,24 @@ public partial class MainViewModel : ViewModelBase
                     Directory.Delete(
                         temporaryJbDirectory,
                         recursive: true);
+                }
+                if (job.SourceType == GameSourceType.Url &&
+                    !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
+                    File.Exists(job.LocalSourcePath))
+                {
+                    var downloadDirectory =
+                        Path.GetDirectoryName(job.LocalSourcePath);
+
+                    File.Delete(job.LocalSourcePath);
+
+                    if (!string.IsNullOrWhiteSpace(downloadDirectory) &&
+                        Directory.Exists(downloadDirectory) &&
+                        !Directory.EnumerateFileSystemEntries(downloadDirectory).Any())
+                    {
+                        Directory.Delete(downloadDirectory);
+                    }
+
+                    job.LocalSourcePath = null;
                 }
             }
             catch (Exception ex)
