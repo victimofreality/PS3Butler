@@ -19,8 +19,9 @@ public class AppSettings
     public string WorkDirectory { get; set; } =
         Path.Combine(Path.GetTempPath(), "PS3Butler");
 
-    public string DefaultDestinationPath { get; set; } =
-        string.Empty;
+    public string IsoDestinationPath { get; set; } = string.Empty;
+
+    public string JbDestinationPath { get; set; } = string.Empty;
 
     public int Ps3DecThreadCount { get; set; } = 32;
 

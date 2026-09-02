@@ -19,28 +19,33 @@ public class GamePreflightService
     private readonly KeyIndexService _keyIndex;
     private readonly ArchiveInspectionService _archiveInspectionService;
     private readonly DestinationInspectionService _destinationInspectionService;
-    private readonly string _destinationDirectory;
     private readonly MetadataCacheService _metadataCacheService;
+    private readonly string _isoDestinationDirectory;
+    private readonly string _jbDestinationDirectory;
 
     public GamePreflightService(
         KeyIndexService keyIndex,
         ArchiveInspectionService archiveInspectionService,
         DestinationInspectionService destinationInspectionService,
         MetadataCacheService metadataCacheService,
-        string destinationDirectory)
+        string isoDestinationDirectory,
+        string jbDestinationDirectory)
     {
         _keyIndex = keyIndex;
         _archiveInspectionService = archiveInspectionService;
         _destinationInspectionService = destinationInspectionService;
-        _destinationDirectory = destinationDirectory;
         _metadataCacheService = metadataCacheService;
+        _isoDestinationDirectory = isoDestinationDirectory;
+        _jbDestinationDirectory = jbDestinationDirectory;
     }
+
     public async Task PreflightAsync(GameJob job)
     {
         job.KeyPath = null;
         job.DetectedIsoName = null;
         job.DiscKey = null;
         job.Details = string.Empty;
+
         if (job.SourceType == GameSourceType.Url &&
             string.IsNullOrWhiteSpace(job.LocalSourcePath))
         {
@@ -75,15 +80,19 @@ public class GamePreflightService
                 ".iso",
                 StringComparison.OrdinalIgnoreCase))
         {
-            job.DetectedIsoName = Path.GetFileName(sourcePath);
-            gameName = Path.GetFileNameWithoutExtension(sourcePath);
+            job.DetectedIsoName =
+                Path.GetFileName(sourcePath);
+
+            gameName =
+                Path.GetFileNameWithoutExtension(sourcePath);
         }
         else
         {
             job.Status = "Inspecting archive";
 
             var isoName =
-                await _archiveInspectionService.FindIsoNameAsync(sourcePath);
+                await _archiveInspectionService.FindIsoNameAsync(
+                    sourcePath);
 
             if (isoName is null)
             {
@@ -94,20 +103,38 @@ public class GamePreflightService
             }
 
             job.DetectedIsoName = isoName;
-            gameName = Path.GetFileNameWithoutExtension(isoName);
+
+            gameName =
+                Path.GetFileNameWithoutExtension(isoName);
         }
+
+        var defaultDestinationDirectory =
+            job.OutputFormat == OutputFormat.JbFolder
+                ? _jbDestinationDirectory
+                : _isoDestinationDirectory;
 
         var destinationDirectory =
             string.IsNullOrWhiteSpace(job.DestinationOverride)
-                ? _destinationDirectory
+                ? defaultDestinationDirectory
                 : job.DestinationOverride;
+
+        if (string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            job.Status = "Error";
+            job.Details =
+                job.OutputFormat == OutputFormat.JbFolder
+                    ? "JB destination is not configured."
+                    : "ISO destination is not configured.";
+            return;
+        }
 
         if (job.OutputFormat == OutputFormat.EncryptedIsoWithKey)
         {
             var existingEncryptedIso =
-                _destinationInspectionService.FindExistingEncryptedIsoWithKey(
-                    destinationDirectory,
-                    gameName);
+                _destinationInspectionService
+                    .FindExistingEncryptedIsoWithKey(
+                        destinationDirectory,
+                        gameName);
 
             if (existingEncryptedIso is not null)
             {
@@ -129,32 +156,77 @@ public class GamePreflightService
             {
                 job.Status = "Already exists";
                 job.Details =
-                    $"Destination already contains: {Path.GetFileName(existingGame)}";
+                    $"Destination already contains: " +
+                    $"{Path.GetFileName(existingGame)}";
+                return;
+            }
+        }
+
+        /*
+         * If this job is being sent to the normal JB destination,
+         * also check the ISO destination for an existing copy.
+         *
+         * Per-job overrides are treated as deliberate overrides and
+         * therefore only inspect the overridden destination.
+         */
+        if (string.IsNullOrWhiteSpace(job.DestinationOverride) &&
+            job.OutputFormat == OutputFormat.JbFolder &&
+            !string.IsNullOrWhiteSpace(_isoDestinationDirectory))
+        {
+            var existingIso =
+                _destinationInspectionService.FindExistingGame(
+                    _isoDestinationDirectory,
+                    gameName);
+
+            if (existingIso is not null)
+            {
+                job.Status = "Already exists";
+                job.Details =
+                    $"ISO destination already contains: " +
+                    $"{Path.GetFileName(existingIso)}";
                 return;
             }
         }
 
         var cachedMetadata =
             _metadataCacheService.FindByGameName(gameName);
+
         if (cachedMetadata is not null &&
             !string.IsNullOrWhiteSpace(cachedMetadata.TitleId))
         {
-            var existingJbGame =
-                _destinationInspectionService.FindJbGameByTitleId(
-                    destinationDirectory,
-                    cachedMetadata.TitleId);
+            /*
+             * For normal destinations, always check the JB library by
+             * TITLE_ID so an ISO job does not create a duplicate of a
+             * game already stored as a JB folder.
+             */
+            var jbDirectoryToCheck =
+                string.IsNullOrWhiteSpace(job.DestinationOverride)
+                    ? _jbDestinationDirectory
+                    : destinationDirectory;
 
-            if (existingJbGame is not null)
+            if (!string.IsNullOrWhiteSpace(jbDirectoryToCheck))
             {
-                job.TitleId = cachedMetadata.TitleId;
-                job.Status = "Already exists";
-                job.Details =
-                    $"Destination already contains {existingJbGame.Title} " +
-                    $"({existingJbGame.TitleId}) as a JB folder.";
-                return;
+                var existingJbGame =
+                    _destinationInspectionService
+                        .FindJbGameByTitleId(
+                            jbDirectoryToCheck,
+                            cachedMetadata.TitleId);
+
+                if (existingJbGame is not null)
+                {
+                    job.TitleId = cachedMetadata.TitleId;
+                    job.Status = "Already exists";
+                    job.Details =
+                        $"Destination already contains " +
+                        $"{existingJbGame.Title} " +
+                        $"({existingJbGame.TitleId}) as a JB folder.";
+                    return;
+                }
             }
         }
-        var keyPath = _keyIndex.Find(gameName);
+
+        var keyPath =
+            _keyIndex.Find(gameName);
 
         if (keyPath is null)
         {
@@ -179,6 +251,7 @@ public class GamePreflightService
 
         job.DiscKey = discKey;
         job.Status = "Ready";
+
         if (extension.Equals(
                 ".iso",
                 StringComparison.OrdinalIgnoreCase))
@@ -189,7 +262,8 @@ public class GamePreflightService
         else
         {
             job.Details =
-                $"ISO: {job.DetectedIsoName} | Key found: {Path.GetFileName(keyPath)}";
+                $"ISO: {job.DetectedIsoName} | " +
+                $"Key found: {Path.GetFileName(keyPath)}";
         }
     }
 }

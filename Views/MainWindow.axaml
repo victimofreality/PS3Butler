@@ -101,19 +101,32 @@
 							Command="{Binding BrowseWorkDirectoryCommand}" />
 					</Grid>
 
-					<TextBlock Text="Default destination" />
+					<TextBlock Text="ISO destination" />
 
 					<Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
 						<TextBox
 							Grid.Column="0"
-							Text="{Binding DefaultDestinationPath}" />
+							Text="{Binding IsoDestinationPath}" />
 
 						<Button
 							Grid.Column="1"
 							Content="Browse..."
-							Command="{Binding BrowseDefaultDestinationCommand}" />
+							Command="{Binding BrowseIsoDestinationCommand}" />
 					</Grid>
 
+					<TextBlock Text="JB folder destination" />
+
+					<Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+						<TextBox
+							Grid.Column="0"
+							Text="{Binding JbDestinationPath}" />
+
+						<Button
+							Grid.Column="1"
+							Content="Browse..."
+							Command="{Binding BrowseJbDestinationCommand}" />
+					</Grid>
+					
 					<TextBlock Text="PS3Dec thread count" />
 
 					<NumericUpDown
@@ -300,10 +313,6 @@
 												Text="{Binding SourcePath}"
 												FontSize="12"
 												TextWrapping="Wrap" />
-											<TextBlock
-												Text="{Binding SourcePath}"
-												FontSize="12"
-												TextWrapping="Wrap" />
 
 											<TextBlock
 												Text="{Binding Details}"
@@ -344,59 +353,6 @@
 
 			</Border>
 			
-			<TextBlock
-                Text="Dependency check"
-                FontSize="20"
-                FontWeight="SemiBold" />
-
-			<ListBox
-    ItemsSource="{Binding Jobs}"
-    SelectedItem="{Binding SelectedJob}">
-
-				<ListBox.ItemTemplate>
-					<DataTemplate x:DataType="models:GameJob">
-
-						<Border
-							Margin="0,0,0,8"
-							Padding="12"
-							BorderThickness="1"
-							CornerRadius="6">
-
-							<Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
-
-								<StackPanel
-									Grid.Column="0"
-									Spacing="4">
-
-									<TextBlock
-										Text="{Binding DisplayName}"
-										FontWeight="SemiBold" />
-
-									<TextBlock
-										Text="{Binding SourcePath}"
-										FontSize="12"
-										TextWrapping="Wrap" />
-
-									<TextBlock
-										Text="{Binding Details}"
-										FontSize="12"
-										TextWrapping="Wrap" />
-
-								</StackPanel>
-
-								<TextBlock
-									Grid.Column="1"
-									Text="{Binding Status}"
-									VerticalAlignment="Center" />
-
-							</Grid>
-
-						</Border>
-
-					</DataTemplate>
-				</ListBox.ItemTemplate>
-
-			</ListBox>
 
 		</StackPanel>
 	</ScrollViewer>

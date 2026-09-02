@@ -52,8 +52,10 @@ public partial class MainViewModel : ViewModelBase
     public partial string WorkDirectory { get; set; }
 
     [ObservableProperty]
-    public partial string DefaultDestinationPath { get; set; }
+    public partial string IsoDestinationPath { get; set; }
 
+    [ObservableProperty]
+    public partial string JbDestinationPath { get; set; }
     [ObservableProperty]
     public partial string SettingsStatus { get; set; } = string.Empty;
 
@@ -85,7 +87,8 @@ public partial class MainViewModel : ViewModelBase
         SevenZipPath = _settings.SevenZipPath;
         RedumpKeysPath = _settings.RedumpKeysPath;
         WorkDirectory = _settings.WorkDirectory;
-        DefaultDestinationPath = _settings.DefaultDestinationPath;
+        IsoDestinationPath = _settings.IsoDestinationPath;
+        JbDestinationPath = _settings.JbDestinationPath;
         Ps3DecThreadCount = _settings.Ps3DecThreadCount;
         RemovePs3Update = _settings.RemovePs3Update;
 
@@ -127,9 +130,14 @@ public partial class MainViewModel : ViewModelBase
             errors.Add("Work directory cannot be empty.");
         }
 
-        if (string.IsNullOrWhiteSpace(DefaultDestinationPath))
+        if (string.IsNullOrWhiteSpace(IsoDestinationPath))
         {
-            errors.Add("Default destination cannot be empty.");
+            errors.Add("ISO destination cannot be empty.");
+        }
+
+        if (string.IsNullOrWhiteSpace(JbDestinationPath))
+        {
+            errors.Add("JB destination cannot be empty.");
         }
 
         if (errors.Count > 0)
@@ -144,7 +152,8 @@ public partial class MainViewModel : ViewModelBase
         _settings.RedumpKeysPath = RedumpKeysPath;
         _settings.Ps3DecThreadCount = Ps3DecThreadCount;
         _settings.WorkDirectory = WorkDirectory;
-        _settings.DefaultDestinationPath = DefaultDestinationPath;
+        _settings.IsoDestinationPath = IsoDestinationPath;
+        _settings.JbDestinationPath = JbDestinationPath;
         _settings.RemovePs3Update = RemovePs3Update;
 
         _settingsService.Save(_settings);
@@ -261,7 +270,8 @@ public partial class MainViewModel : ViewModelBase
                 archiveInspectionService,
                 destinationInspectionService,
                 _metadataCacheService,
-                DefaultDestinationPath);
+                IsoDestinationPath,
+                JbDestinationPath);
 
         foreach (var job in Jobs)
         {
@@ -408,9 +418,14 @@ public partial class MainViewModel : ViewModelBase
                 continue;
             }
 
+            var defaultDestinationPath =
+                job.OutputFormat == OutputFormat.JbFolder
+                    ? JbDestinationPath
+                    : IsoDestinationPath;
+
             var destinationPath =
                 string.IsNullOrWhiteSpace(job.DestinationOverride)
-                    ? DefaultDestinationPath
+                    ? defaultDestinationPath
                     : job.DestinationOverride;
 
             job.Progress = 0;
@@ -945,18 +960,38 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task BrowseDefaultDestination()
+    private async Task BrowseIsoDestination()
     {
-        var folders = await _window.StorageProvider.OpenFolderPickerAsync(
-            new FolderPickerOpenOptions
-            {
-                Title = "Select default destination",
-                AllowMultiple = false
-            });
+        var folders =
+            await _window.StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions
+                {
+                    Title = "Select ISO destination",
+                    AllowMultiple = false
+                });
 
         if (folders.Count > 0)
         {
-            DefaultDestinationPath = folders[0].Path.LocalPath;
+            IsoDestinationPath =
+                folders[0].Path.LocalPath;
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseJbDestination()
+    {
+        var folders =
+            await _window.StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions
+                {
+                    Title = "Select JB destination",
+                    AllowMultiple = false
+                });
+
+        if (folders.Count > 0)
+        {
+            JbDestinationPath =
+                folders[0].Path.LocalPath;
         }
     }
 
@@ -1043,7 +1078,7 @@ public partial class MainViewModel : ViewModelBase
 
         var games =
             destinationInspectionService.ScanJbGames(
-                DefaultDestinationPath);
+                JbDestinationPath);
 
         SettingsStatus =
             $"Destination scan found {games.Count:N0} JB game(s) with readable PARAM.SFO metadata.";
