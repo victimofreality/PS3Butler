@@ -18,8 +18,17 @@ public class SettingsService
     public string SettingsFilePath => _settingsFilePath;
 
     public SettingsService()
+        : this(
+            AppContext.BaseDirectory,
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.ApplicationData))
     {
-        var appDirectory = AppContext.BaseDirectory;
+    }
+
+    internal SettingsService(
+        string appDirectory,
+        string appDataDirectory)
+    {
         var portableMarkerPath = Path.Combine(appDirectory, PortableMarkerFileName);
 
         IsPortableMode = File.Exists(portableMarkerPath);
@@ -30,9 +39,6 @@ public class SettingsService
         }
         else
         {
-            var appDataDirectory =
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-
             _settingsDirectory = Path.Combine(appDataDirectory, "PS3Butler");
         }
 
