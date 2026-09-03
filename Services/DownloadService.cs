@@ -10,7 +10,18 @@ namespace PS3Butler.Services;
 
 public class DownloadService
 {
-    private readonly HttpClient _httpClient = new();
+    private readonly HttpClient _httpClient;
+
+    public DownloadService()
+        : this(new HttpClient())
+    {
+    }
+
+    internal DownloadService(HttpClient httpClient)
+    {
+        _httpClient = httpClient ??
+            throw new ArgumentNullException(nameof(httpClient));
+    }
 
     public async Task<(bool Success, string OutputPath, string Error)> DownloadAsync(
         string url,
