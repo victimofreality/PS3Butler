@@ -1,7 +1,8 @@
-﻿using System;
-using System.Diagnostics;
+﻿using PS3Butler.Services.Execution;
+using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
@@ -9,13 +10,27 @@ namespace PS3Butler.Services;
 public class ArchiveInspectionService
 {
     private readonly string _sevenZipPath;
+    private readonly IProcessRunner _processRunner;
 
-    public ArchiveInspectionService(string sevenZipPath)
+    public ArchiveInspectionService(
+        string sevenZipPath)
+        : this(
+            sevenZipPath,
+            new ProcessRunner())
     {
-        _sevenZipPath = sevenZipPath;
     }
 
-    public async Task<string?> FindIsoNameAsync(string archivePath)
+    public ArchiveInspectionService(
+        string sevenZipPath,
+        IProcessRunner processRunner)
+    {
+        _sevenZipPath = sevenZipPath;
+        _processRunner = processRunner;
+    }
+
+    public async Task<string?> FindIsoNameAsync(
+        string archivePath,
+        CancellationToken cancellationToken = default)
     {
         if (!File.Exists(_sevenZipPath))
         {
@@ -27,49 +42,49 @@ public class ArchiveInspectionService
             return null;
         }
 
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = _sevenZipPath,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
+        var request =
+            new ProcessRunRequest
+            {
+                FileName = _sevenZipPath,
+                Arguments =
+                    $"l -slt \"{archivePath}\"",
+                Timeout =
+                    TimeSpan.FromSeconds(30)
+            };
 
-        startInfo.ArgumentList.Add("l");
-        startInfo.ArgumentList.Add("-slt");
-        startInfo.ArgumentList.Add(archivePath);
+        var result =
+            await _processRunner.RunAsync(
+                request,
+                cancellationToken);
 
-        using var process = new Process
-        {
-            StartInfo = startInfo
-        };
-
-        process.Start();
-
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var error = await process.StandardError.ReadToEndAsync();
-
-        await process.WaitForExitAsync();
-
-        if (process.ExitCode != 0)
+        if (!result.Success)
         {
             return null;
         }
 
-        var isoPaths = output
-            .Split(Environment.NewLine)
-            .Where(line => line.StartsWith("Path = ", StringComparison.Ordinal))
-            .Select(line => line["Path = ".Length..].Trim())
-            .Where(path =>
-                path.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        var isoPaths =
+            result.StandardOutput
+                .Split(
+                    Environment.NewLine,
+                    StringSplitOptions.RemoveEmptyEntries)
+                .Where(line =>
+                    line.StartsWith(
+                        "Path = ",
+                        StringComparison.Ordinal))
+                .Select(line =>
+                    line["Path = ".Length..].Trim())
+                .Where(path =>
+                    path.EndsWith(
+                        ".iso",
+                        StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
         if (isoPaths.Count != 1)
         {
             return null;
         }
 
-        return Path.GetFileName(isoPaths[0]);
+        return Path.GetFileName(
+            isoPaths[0]);
     }
 }
