@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,12 +47,16 @@ public sealed class ProcessRunner : IProcessRunner
 
             var standardOutputTask =
                 request.RedirectStandardOutput
-                    ? process.StandardOutput.ReadToEndAsync()
+                    ? ReadStreamAsync(
+                        process.StandardOutput,
+                        request.StandardOutputChunkReceived)
                     : Task.FromResult(string.Empty);
 
             var standardErrorTask =
                 request.RedirectStandardError
-                    ? process.StandardError.ReadToEndAsync()
+                    ? ReadStreamAsync(
+                        process.StandardError,
+                        request.StandardErrorChunkReceived)
                     : Task.FromResult(string.Empty);
 
             using var timeoutCancellationTokenSource =
@@ -147,6 +153,44 @@ public sealed class ProcessRunner : IProcessRunner
                 StandardError = ex.Message
             };
         }
+    }
+
+    private static async Task<string> ReadStreamAsync(
+        StreamReader reader,
+        Action<string>? chunkReceived)
+    {
+        var output =
+            new StringBuilder();
+
+        var buffer =
+            new char[1024];
+
+        while (true)
+        {
+            var charsRead =
+                await reader.ReadAsync(
+                    buffer.AsMemory(
+                        0,
+                        buffer.Length));
+
+            if (charsRead == 0)
+            {
+                break;
+            }
+
+            var chunk =
+                new string(
+                    buffer,
+                    0,
+                    charsRead);
+
+            output.Append(chunk);
+
+            chunkReceived?.Invoke(
+                chunk);
+        }
+
+        return output.ToString();
     }
 
     private static void TryKillProcessTree(

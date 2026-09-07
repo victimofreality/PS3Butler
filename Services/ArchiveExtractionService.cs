@@ -1,8 +1,9 @@
-﻿using System;
-using System.Diagnostics;
+﻿using PS3Butler.Services.Execution;
+using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
@@ -10,20 +11,34 @@ namespace PS3Butler.Services;
 public class ArchiveExtractionService
 {
     private static readonly Regex ProgressRegex =
-        new(@"(?<percent>\d{1,3})%",
+        new(
+            @"(?<percent>\d{1,3})%",
             RegexOptions.Compiled);
 
     private readonly string _sevenZipPath;
+    private readonly IProcessRunner _processRunner;
 
-    public ArchiveExtractionService(string sevenZipPath)
+    public ArchiveExtractionService(
+        string sevenZipPath)
+        : this(
+            sevenZipPath,
+            new ProcessRunner())
+    {
+    }
+
+    public ArchiveExtractionService(
+        string sevenZipPath,
+        IProcessRunner processRunner)
     {
         _sevenZipPath = sevenZipPath;
+        _processRunner = processRunner;
     }
 
     public async Task<(bool Success, string IsoPath, string Error)> ExtractIsoAsync(
         string archivePath,
         string outputDirectory,
-        IProgress<double>? progress = null)
+        IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (!File.Exists(_sevenZipPath))
         {
@@ -41,57 +56,16 @@ public class ArchiveExtractionService
                 "Archive not found.");
         }
 
-        Directory.CreateDirectory(outputDirectory);
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = _sevenZipPath,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-
-        startInfo.ArgumentList.Add("x");
-        startInfo.ArgumentList.Add("-y");
-        startInfo.ArgumentList.Add("-bsp1");
-        startInfo.ArgumentList.Add($"-o{outputDirectory}");
-        startInfo.ArgumentList.Add(archivePath);
-
-        using var process = new Process
-        {
-            StartInfo = startInfo
-        };
-
-        process.Start();
-
-        var stderrTask =
-            process.StandardError.ReadToEndAsync();
-
-        var outputBuffer =
-            new char[256];
+        Directory.CreateDirectory(
+            outputDirectory);
 
         var pendingText =
             string.Empty;
 
-        while (true)
+        void HandleOutputChunk(
+            string chunk)
         {
-            var charsRead =
-                await process.StandardOutput.ReadAsync(
-                    outputBuffer.AsMemory(
-                        0,
-                        outputBuffer.Length));
-
-            if (charsRead == 0)
-            {
-                break;
-            }
-
-            pendingText +=
-                new string(
-                    outputBuffer,
-                    0,
-                    charsRead);
+            pendingText += chunk;
 
             var matches =
                 ProgressRegex.Matches(
@@ -118,17 +92,49 @@ public class ArchiveExtractionService
             }
         }
 
-        await process.WaitForExitAsync();
+        var request =
+            new ProcessRunRequest
+            {
+                FileName =
+                    _sevenZipPath,
 
-        var stderr =
-            await stderrTask;
+                Arguments =
+                    $"x -y -bsp1 " +
+                    $"-o\"{outputDirectory}\" " +
+                    $"\"{archivePath}\"",
 
-        if (process.ExitCode != 0)
+                StandardOutputChunkReceived =
+                    HandleOutputChunk
+            };
+
+        var result =
+            await _processRunner.RunAsync(
+                request,
+                cancellationToken);
+
+        if (result.WasCancelled)
         {
             return (
                 false,
                 string.Empty,
-                $"7-Zip exited with code {process.ExitCode}: {stderr.Trim()}");
+                "Archive extraction cancelled.");
+        }
+
+        if (result.TimedOut)
+        {
+            return (
+                false,
+                string.Empty,
+                "Archive extraction timed out.");
+        }
+
+        if (!result.Success)
+        {
+            return (
+                false,
+                string.Empty,
+                $"7-Zip exited with code {result.ExitCode}: " +
+                $"{result.StandardError.Trim()}");
         }
 
         var isoFiles =
@@ -155,7 +161,8 @@ public class ArchiveExtractionService
                 "Extraction completed but multiple ISOs were found.");
         }
 
-        progress?.Report(100);
+        progress?.Report(
+            100);
 
         return (
             true,

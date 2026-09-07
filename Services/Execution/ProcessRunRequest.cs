@@ -15,4 +15,8 @@ public sealed class ProcessRunRequest
     public bool RedirectStandardError { get; init; } = true;
 
     public TimeSpan? Timeout { get; init; }
+
+    public Action<string>? StandardOutputChunkReceived { get; init; }
+
+    public Action<string>? StandardErrorChunkReceived { get; init; }
 }
