@@ -287,16 +287,87 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ProcessReadyJobs()
     {
+        /*
+         * Preflight everything we can before starting.
+         *
+         * Local jobs can become Ready immediately. URL jobs that have not
+         * downloaded yet remain Waiting until their download completes.
+         */
+        await PreflightQueue();
+
+        var queuedJobs =
+            Jobs.ToList();
+
+        var processingTasks =
+            new List<Task>();
+
+        using var processingGate =
+            new SemaphoreSlim(1, 1);
+
+        async Task ProcessQueuedJobAsync(GameJob queuedJob)
+        {
+            await processingGate.WaitAsync();
+
+            try
+            {
+                await ProcessSingleJobAsync(queuedJob);
+            }
+            finally
+            {
+                processingGate.Release();
+            }
+        }
+
+        /*
+         * Start any local/already-downloaded Ready jobs immediately.
+         *
+         * ProcessQueuedJobAsync is protected by processingGate, so there is
+         * never more than one extract/decrypt/copy pipeline running at once.
+         */
+        foreach (var job in queuedJobs)
+        {
+            if (job.Status == "Ready")
+            {
+                processingTasks.Add(
+                    ProcessQueuedJobAsync(job));
+            }
+        }
+
         var downloadService =
             new DownloadService();
 
-        _downloadCancellationTokenSource =
-            new CancellationTokenSource();
+        /*
+         * This preflight instance is used for URL jobs as each individual
+         * download finishes. That lets processing begin immediately rather
+         * than waiting for every URL in the queue to download first.
+         */
+        _keyIndexService.Build(
+            RedumpKeysPath);
 
-        _downloadPauseTokenSource =
-            new PauseTokenSource();
+        var archiveInspectionService =
+            new ArchiveInspectionService(
+                SevenZipPath);
 
-        foreach (var job in Jobs)
+        var destinationInspectionService =
+            new DestinationInspectionService();
+
+        var preflightService =
+            new GamePreflightService(
+                _keyIndexService,
+                archiveInspectionService,
+                destinationInspectionService,
+                _metadataCacheService,
+                IsoDestinationPath,
+                JbDestinationPath);
+
+        /*
+         * Downloads remain deliberately sequential.
+         *
+         * As soon as one download completes and passes preflight, its
+         * processing task is queued. The next download can then start while
+         * that game is extracting/decrypting/copying.
+         */
+        foreach (var job in queuedJobs)
         {
             if (job.SourceType != GameSourceType.Url ||
                 job.Status == "Complete" ||
@@ -305,18 +376,36 @@ public partial class MainViewModel : ViewModelBase
                 continue;
             }
 
+            /*
+             * A URL job with an existing local source was already handled by
+             * the initial preflight above.
+             */
             if (!string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
                 File.Exists(job.LocalSourcePath))
             {
                 continue;
             }
 
+            /*
+             * Give each download its own cancellation and pause state.
+             * Cancelling one download therefore does not poison every URL
+             * remaining in the queue.
+             */
+            _downloadCancellationTokenSource?.Dispose();
+
+            _downloadCancellationTokenSource =
+                new CancellationTokenSource();
+
+            _downloadPauseTokenSource =
+                new PauseTokenSource();
+
             job.Status = "Downloading";
             job.CurrentStage = "Downloading";
             job.Progress = 0;
             job.TransferSpeedMbps = 0;
             job.EtaText = string.Empty;
-            job.Details = "Downloading source file...";
+            job.Details =
+                "Downloading source file...";
 
             var downloadDirectory =
                 Path.Combine(
@@ -377,12 +466,34 @@ public partial class MainViewModel : ViewModelBase
             job.TransferSpeedMbps = 0;
             job.EtaText = string.Empty;
             job.Details =
-                "Download complete. Waiting for preflight.";
+                "Download complete. Preflighting...";
+
+            await preflightService.PreflightAsync(
+                job);
+
+            if (job.Status == "Ready")
+            {
+                processingTasks.Add(
+                    ProcessQueuedJobAsync(job));
+            }
         }
 
-        await PreflightQueue();
+        /*
+         * All downloads are now finished. Processing may still be working
+         * through the queue, so wait for it before ProcessReadyJobs returns.
+         */
+        await Task.WhenAll(
+            processingTasks);
 
-        var ps3DecService = new Ps3DecService(
+        _downloadCancellationTokenSource?.Dispose();
+        _downloadCancellationTokenSource = null;
+        _downloadPauseTokenSource = null;
+    }
+
+    private async Task ProcessSingleJobAsync(GameJob job)
+    {
+        var ps3DecService =
+            new Ps3DecService(
                 RedrrxPs3DecPath,
                 Ps3DecThreadCount);
 
@@ -404,457 +515,160 @@ public partial class MainViewModel : ViewModelBase
             new DecryptedIsoMetadataService(
                 SevenZipPath);
 
-        foreach (var job in Jobs)
+        if (job.Status != "Ready")
         {
-            if (job.Status != "Ready")
-            {
-                continue;
-            }
+            return;
+        }
 
-            if (string.IsNullOrWhiteSpace(job.DiscKey))
-            {
-                job.Status = "Error";
-                job.Details = "Disc key is missing.";
-                continue;
-            }
+        if (string.IsNullOrWhiteSpace(job.DiscKey))
+        {
+            job.Status = "Error";
+            job.Details = "Disc key is missing.";
+            return;
+        }
 
-            var defaultDestinationPath =
-                job.OutputFormat == OutputFormat.JbFolder
-                    ? JbDestinationPath
-                    : IsoDestinationPath;
+        var defaultDestinationPath =
+            job.OutputFormat == OutputFormat.JbFolder
+                ? JbDestinationPath
+                : IsoDestinationPath;
 
-            var destinationPath =
-                string.IsNullOrWhiteSpace(job.DestinationOverride)
-                    ? defaultDestinationPath
-                    : job.DestinationOverride;
+        var destinationPath =
+            string.IsNullOrWhiteSpace(job.DestinationOverride)
+                ? defaultDestinationPath
+                : job.DestinationOverride;
 
-            job.Progress = 0;
-            job.CurrentStage = string.Empty;
-            job.EtaText = string.Empty;
-            job.TransferSpeedMbps = 0;
+        job.Progress = 0;
+        job.CurrentStage = string.Empty;
+        job.EtaText = string.Empty;
+        job.TransferSpeedMbps = 0;
 
-            string inputIsoPath;
-            string? temporaryExtractionDirectory = null;
-            string? temporaryJbDirectory = null;
+        string inputIsoPath;
+        string? temporaryExtractionDirectory = null;
+        string? temporaryJbDirectory = null;
 
-            var sourcePath =
-                job.EffectiveSourcePath;
+        var sourcePath =
+            job.EffectiveSourcePath;
 
-            var extension =
-                Path.GetExtension(sourcePath);
+        var extension =
+            Path.GetExtension(sourcePath);
 
-            if (extension.Equals(
-                    ".iso",
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                inputIsoPath =
-                    sourcePath;
-            }
-            else
-            {
-                job.Status = "Extracting";
-                job.CurrentStage = "Extracting archive";
-                job.Progress = 0;
-                job.Details =
-                    "Extracting ISO from archive...";
-
-                temporaryExtractionDirectory =
-                    Path.Combine(
-                        WorkDirectory,
-                        "archive",
-                        Guid.NewGuid().ToString("N"));
-
-                var extractionProgress =
-                    new Progress<double>(value =>
-                    {
-                        job.Progress = value;
-                    });
-
-                var extractionResult =
-                    await archiveExtractionService.ExtractIsoAsync(
-                        sourcePath,
-                        temporaryExtractionDirectory,
-                        extractionProgress);
-
-                if (!extractionResult.Success)
-                {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
-                    job.Details =
-                        extractionResult.Error;
-                    continue;
-                }
-
-                inputIsoPath =
-                    extractionResult.IsoPath;
-            }
-            if (job.OutputFormat ==
-                OutputFormat.EncryptedIsoWithKey)
-            {
-                job.Status = "Copying";
-                job.CurrentStage = "Copying encrypted ISO";
-                job.Progress = 0;
-                job.TransferSpeedMbps = 0;
-                job.EtaText = string.Empty;
-                job.Details =
-                    "Copying encrypted ISO and disc key to destination...";
-
-                var finalIsoFileName =
-                    job.DetectedIsoName ??
-                    Path.GetFileName(inputIsoPath);
-
-                var copyProgress =
-                    new Progress<TransferProgress>(value =>
-                    {
-                        job.Progress =
-                            value.Percentage;
-
-                        job.TransferSpeedMbps =
-                            value.MegabytesPerSecond;
-
-                        if (value.EstimatedRemaining.HasValue)
-                        {
-                            var eta =
-                                value.EstimatedRemaining.Value;
-
-                            job.EtaText =
-                                $"Copying — " +
-                                $"{value.MegabytesPerSecond:F1} MB/s — " +
-                                $"{eta:hh\\:mm\\:ss} remaining";
-                        }
-                        else
-                        {
-                            job.EtaText =
-                                $"Copying — " +
-                                $"{value.MegabytesPerSecond:F1} MB/s";
-                        }
-                    });
-
-                var deliveryResult =
-                    await deliveryService.CopyAsync(
-                        inputIsoPath,
-                        destinationPath,
-                        copyProgress,
-                        finalIsoFileName);
-
-                if (!deliveryResult.Success)
-                {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
-                    job.Details =
-                        deliveryResult.Error;
-                    continue;
-                }
-
-                var destinationKeyPath =
-                    Path.ChangeExtension(
-                        deliveryResult.DestinationPath,
-                        ".dkey");
-
-                await File.WriteAllTextAsync(
-                    destinationKeyPath,
-                    job.DiscKey);
-
-                job.OutputPath =
-                    deliveryResult.DestinationPath;
-
-                try
-                {
-                    if (temporaryExtractionDirectory is not null &&
-                        Directory.Exists(
-                            temporaryExtractionDirectory))
-                    {
-                        Directory.Delete(
-                            temporaryExtractionDirectory,
-                            recursive: true);
-                    }
-
-                    if (job.SourceType == GameSourceType.Url &&
-                        !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
-                        File.Exists(job.LocalSourcePath))
-                    {
-                        var downloadDirectory =
-                            Path.GetDirectoryName(job.LocalSourcePath);
-
-                        File.Delete(job.LocalSourcePath);
-
-                        if (!string.IsNullOrWhiteSpace(downloadDirectory) &&
-                            Directory.Exists(downloadDirectory) &&
-                            !Directory.EnumerateFileSystemEntries(downloadDirectory).Any())
-                        {
-                            Directory.Delete(downloadDirectory);
-                        }
-
-                        job.LocalSourcePath = null;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    job.Status = "Complete";
-                    job.CurrentStage = "Complete";
-                    job.Progress = 100;
-                    job.EtaText = string.Empty;
-                    job.Details =
-                        $"Encrypted ISO and key copied successfully, but temporary cleanup failed: {ex.Message}";
-                    continue;
-                }
-                job.Status = "Complete";
-                job.CurrentStage = "Complete";
-                job.Progress = 100;
-                job.EtaText = string.Empty;
-                job.Details =
-                    $"Encrypted ISO and key copied to: {job.OutputPath}";
-
-                continue;
-            }
-
-            job.Status = "Decrypting";
-            job.CurrentStage = "Decrypting";
+        if (extension.Equals(
+                ".iso",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            inputIsoPath =
+                sourcePath;
+        }
+        else
+        {
+            job.Status = "Extracting";
+            job.CurrentStage = "Extracting archive";
             job.Progress = 0;
             job.Details =
-                "Decrypting ISO with ps3decrs...";
+                "Extracting ISO from archive...";
 
-            var decryptProgress =
+            temporaryExtractionDirectory =
+                Path.Combine(
+                    WorkDirectory,
+                    "archive",
+                    Guid.NewGuid().ToString("N"));
+
+            var extractionProgress =
                 new Progress<double>(value =>
                 {
                     job.Progress = value;
                 });
 
-            var decryptResult =
-                await ps3DecService.DecryptAsync(
-                    inputIsoPath,
-                    job.DiscKey,
-                    WorkDirectory,
-                    decryptProgress);
+            var extractionResult =
+                await archiveExtractionService.ExtractIsoAsync(
+                    sourcePath,
+                    temporaryExtractionDirectory,
+                    extractionProgress);
 
-            if (!decryptResult.Success)
+            if (!extractionResult.Success)
             {
                 job.Status = "Error";
                 job.CurrentStage = "Error";
                 job.Details =
-                    decryptResult.Error;
-                continue;
+                    extractionResult.Error;
+                return;
             }
 
-            var metadata =
-                await decryptedIsoMetadataService.ReadMetadataAsync(
-                    decryptResult.OutputPath,
-                    WorkDirectory);
+            inputIsoPath =
+                extractionResult.IsoPath;
+        }
+        if (job.OutputFormat ==
+            OutputFormat.EncryptedIsoWithKey)
+        {
+            job.Status = "Copying";
+            job.CurrentStage = "Copying encrypted ISO";
+            job.Progress = 0;
+            job.TransferSpeedMbps = 0;
+            job.EtaText = string.Empty;
+            job.Details =
+                "Copying encrypted ISO and disc key to destination...";
 
-            if (metadata is not null &&
-                !string.IsNullOrWhiteSpace(metadata.TitleId))
-            {
-                var gameName =
-                    Path.GetFileNameWithoutExtension(
-                        job.DetectedIsoName ??
-                        sourcePath);
+            var finalIsoFileName =
+                job.DetectedIsoName ??
+                Path.GetFileName(inputIsoPath);
 
-                _metadataCacheService.AddOrUpdate(
-                    gameName,
-                    metadata.TitleId,
-                    metadata.Title);
+            var copyProgress =
+                new Progress<TransferProgress>(value =>
+                {
+                    job.Progress =
+                        value.Percentage;
 
-                job.TitleId =
-                    metadata.TitleId;
-            }
+                    job.TransferSpeedMbps =
+                        value.MegabytesPerSecond;
 
-            if (job.OutputFormat ==
-                OutputFormat.DecryptedIso)
-            {
-                job.Status = "Copying";
-                job.CurrentStage = "Copying ISO";
-                job.Progress = 0;
-                job.TransferSpeedMbps = 0;
-                job.EtaText = string.Empty;
-                job.Details =
-                    "Copying decrypted ISO to destination...";
-
-                var copyProgress =
-                    new Progress<TransferProgress>(value =>
+                    if (value.EstimatedRemaining.HasValue)
                     {
-                        job.Progress =
-                            value.Percentage;
+                        var eta =
+                            value.EstimatedRemaining.Value;
 
-                        job.TransferSpeedMbps =
-                            value.MegabytesPerSecond;
-
-                        if (value.EstimatedRemaining.HasValue)
-                        {
-                            var eta =
-                                value.EstimatedRemaining.Value;
-
-                            job.EtaText =
-                                $"Copying — " +
-                                $"{value.MegabytesPerSecond:F1} MB/s — " +
-                                $"{eta:hh\\:mm\\:ss} remaining";
-                        }
-                        else
-                        {
-                            job.EtaText =
-                                $"Copying — " +
-                                $"{value.MegabytesPerSecond:F1} MB/s";
-                        }
-                    });
-
-                var finalIsoFileName =
-                    job.DetectedIsoName ??
-                    Path.GetFileName(sourcePath);
-
-                var deliveryResult =
-                    await deliveryService.CopyAsync(
-                        decryptResult.OutputPath,
-                        destinationPath,
-                        copyProgress,
-                        finalIsoFileName);
-
-                if (!deliveryResult.Success)
-                {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
-                    job.Details =
-                        deliveryResult.Error;
-                    continue;
-                }
-
-                job.OutputPath =
-                    deliveryResult.DestinationPath;
-            }
-            else if (job.OutputFormat ==
-                     OutputFormat.JbFolder)
-            {
-                job.Status = "Extracting";
-                job.CurrentStage = "Creating JB folder";
-                job.Progress = 0;
-                job.Details =
-                    "Extracting decrypted ISO to JB folder...";
-
-                string gameFolderName;
-
-                if (metadata is not null &&
-                    !string.IsNullOrWhiteSpace(metadata.TitleId) &&
-                    !string.IsNullOrWhiteSpace(metadata.Title))
-                {
-                    gameFolderName =
-                        MakeSafeFolderName(
-                            $"{metadata.Title} [{metadata.TitleId}]");
-                }
-                else
-                {
-                    gameFolderName =
-                        MakeSafeFolderName(
-                            Path.GetFileNameWithoutExtension(
-                                job.DetectedIsoName ??
-                                sourcePath));
-                }
-                temporaryJbDirectory =
-                    Path.Combine(
-                        WorkDirectory,
-                        "jb",
-                        Guid.NewGuid().ToString("N"));
-
-                var jbProgress =
-                    new Progress<double>(value =>
-                    {
-                        job.Progress = value;
-                    });
-
-                var jbExtractionResult =
-                    await jbExtractionService.ExtractAsync(
-                        decryptResult.OutputPath,
-                        temporaryJbDirectory,
-                        jbProgress);
-
-                if (!jbExtractionResult.Success)
-                {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
-                    job.Details =
-                        jbExtractionResult.Error;
-                    continue;
-                }
-
-                if (RemovePs3Update)
-                {
-                    var ps3UpdateDirectory =
-                        Path.Combine(
-                            temporaryJbDirectory,
-                            "PS3_UPDATE");
-
-                    if (Directory.Exists(ps3UpdateDirectory))
-                    {
-                        Directory.Delete(
-                            ps3UpdateDirectory,
-                            recursive: true);
+                        job.EtaText =
+                            $"Copying — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s — " +
+                            $"{eta:hh\\:mm\\:ss} remaining";
                     }
-                }
-                var finalJbDestination =
-                    Path.Combine(
-                        destinationPath,
-                        gameFolderName);
-
-                job.Status = "Copying";
-                job.CurrentStage = "Copying JB folder";
-                job.Progress = 0;
-                job.TransferSpeedMbps = 0;
-                job.EtaText = string.Empty;
-                job.Details =
-                    "Copying JB folder to destination...";
-
-                var folderCopyProgress =
-                    new Progress<TransferProgress>(value =>
+                    else
                     {
-                        job.Progress =
-                            value.Percentage;
+                        job.EtaText =
+                            $"Copying — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s";
+                    }
+                });
 
-                        job.TransferSpeedMbps =
-                            value.MegabytesPerSecond;
+            var deliveryResult =
+                await deliveryService.CopyAsync(
+                    inputIsoPath,
+                    destinationPath,
+                    copyProgress,
+                    finalIsoFileName);
 
-                        if (value.EstimatedRemaining.HasValue)
-                        {
-                            var eta =
-                                value.EstimatedRemaining.Value;
-
-                            job.EtaText =
-                                $"Copying — " +
-                                $"{value.MegabytesPerSecond:F1} MB/s — " +
-                                $"{eta:hh\\:mm\\:ss} remaining";
-                        }
-                        else
-                        {
-                            job.EtaText =
-                                $"Copying — " +
-                                $"{value.MegabytesPerSecond:F1} MB/s";
-                        }
-                    });
-
-                var folderDeliveryResult =
-                    await folderDeliveryService.CopyAsync(
-                        temporaryJbDirectory,
-                        finalJbDestination,
-                        folderCopyProgress);
-
-                if (!folderDeliveryResult.Success)
-                {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
-                    job.Details =
-                        folderDeliveryResult.Error;
-                    continue;
-                }
-
-                job.OutputPath =
-                    folderDeliveryResult.DestinationPath;
+            if (!deliveryResult.Success)
+            {
+                job.Status = "Error";
+                job.CurrentStage = "Error";
+                job.Details =
+                    deliveryResult.Error;
+                return;
             }
+
+            var destinationKeyPath =
+                Path.ChangeExtension(
+                    deliveryResult.DestinationPath,
+                    ".dkey");
+
+            await File.WriteAllTextAsync(
+                destinationKeyPath,
+                job.DiscKey);
+
+            job.OutputPath =
+                deliveryResult.DestinationPath;
 
             try
             {
-                if (File.Exists(
-                        decryptResult.OutputPath))
-                {
-                    File.Delete(
-                        decryptResult.OutputPath);
-                }
-
                 if (temporaryExtractionDirectory is not null &&
                     Directory.Exists(
                         temporaryExtractionDirectory))
@@ -864,14 +678,6 @@ public partial class MainViewModel : ViewModelBase
                         recursive: true);
                 }
 
-                if (temporaryJbDirectory is not null &&
-                    Directory.Exists(
-                        temporaryJbDirectory))
-                {
-                    Directory.Delete(
-                        temporaryJbDirectory,
-                        recursive: true);
-                }
                 if (job.SourceType == GameSourceType.Url &&
                     !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
                     File.Exists(job.LocalSourcePath))
@@ -898,28 +704,332 @@ public partial class MainViewModel : ViewModelBase
                 job.Progress = 100;
                 job.EtaText = string.Empty;
                 job.Details =
-                    $"Output completed successfully, but temporary cleanup failed: {ex.Message}";
-                continue;
+                    $"Encrypted ISO and key copied successfully, but temporary cleanup failed: {ex.Message}";
+                return;
             }
-
             job.Status = "Complete";
             job.CurrentStage = "Complete";
             job.Progress = 100;
             job.EtaText = string.Empty;
+            job.Details =
+                $"Encrypted ISO and key copied to: {job.OutputPath}";
 
-            if (job.OutputFormat ==
-                OutputFormat.DecryptedIso)
+            return;
+        }
+
+        job.Status = "Decrypting";
+        job.CurrentStage = "Decrypting";
+        job.Progress = 0;
+        job.Details =
+            "Decrypting ISO with ps3decrs...";
+
+        var decryptProgress =
+            new Progress<double>(value =>
             {
+                job.Progress = value;
+            });
+
+        var decryptResult =
+            await ps3DecService.DecryptAsync(
+                inputIsoPath,
+                job.DiscKey,
+                WorkDirectory,
+                decryptProgress);
+
+        if (!decryptResult.Success)
+        {
+            job.Status = "Error";
+            job.CurrentStage = "Error";
+            job.Details =
+                decryptResult.Error;
+            return;
+        }
+
+        var metadata =
+            await decryptedIsoMetadataService.ReadMetadataAsync(
+                decryptResult.OutputPath,
+                WorkDirectory);
+
+        if (metadata is not null &&
+            !string.IsNullOrWhiteSpace(metadata.TitleId))
+        {
+            var gameName =
+                Path.GetFileNameWithoutExtension(
+                    job.DetectedIsoName ??
+                    sourcePath);
+
+            _metadataCacheService.AddOrUpdate(
+                gameName,
+                metadata.TitleId,
+                metadata.Title);
+
+            job.TitleId =
+                metadata.TitleId;
+        }
+
+        if (job.OutputFormat ==
+            OutputFormat.DecryptedIso)
+        {
+            job.Status = "Copying";
+            job.CurrentStage = "Copying ISO";
+            job.Progress = 0;
+            job.TransferSpeedMbps = 0;
+            job.EtaText = string.Empty;
+            job.Details =
+                "Copying decrypted ISO to destination...";
+
+            var copyProgress =
+                new Progress<TransferProgress>(value =>
+                {
+                    job.Progress =
+                        value.Percentage;
+
+                    job.TransferSpeedMbps =
+                        value.MegabytesPerSecond;
+
+                    if (value.EstimatedRemaining.HasValue)
+                    {
+                        var eta =
+                            value.EstimatedRemaining.Value;
+
+                        job.EtaText =
+                            $"Copying — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s — " +
+                            $"{eta:hh\\:mm\\:ss} remaining";
+                    }
+                    else
+                    {
+                        job.EtaText =
+                            $"Copying — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s";
+                    }
+                });
+
+            var finalIsoFileName =
+                job.DetectedIsoName ??
+                Path.GetFileName(sourcePath);
+
+            var deliveryResult =
+                await deliveryService.CopyAsync(
+                    decryptResult.OutputPath,
+                    destinationPath,
+                    copyProgress,
+                    finalIsoFileName);
+
+            if (!deliveryResult.Success)
+            {
+                job.Status = "Error";
+                job.CurrentStage = "Error";
                 job.Details =
-                    $"Decrypted ISO copied to: {job.OutputPath}";
+                    deliveryResult.Error;
+                return;
+            }
+
+            job.OutputPath =
+                deliveryResult.DestinationPath;
+        }
+        else if (job.OutputFormat ==
+                 OutputFormat.JbFolder)
+        {
+            job.Status = "Extracting";
+            job.CurrentStage = "Creating JB folder";
+            job.Progress = 0;
+            job.Details =
+                "Extracting decrypted ISO to JB folder...";
+
+            string gameFolderName;
+
+            if (metadata is not null &&
+                !string.IsNullOrWhiteSpace(metadata.TitleId) &&
+                !string.IsNullOrWhiteSpace(metadata.Title))
+            {
+                gameFolderName =
+                    MakeSafeFolderName(
+                        $"{metadata.Title} [{metadata.TitleId}]");
             }
             else
             {
+                gameFolderName =
+                    MakeSafeFolderName(
+                        Path.GetFileNameWithoutExtension(
+                            job.DetectedIsoName ??
+                            sourcePath));
+            }
+            temporaryJbDirectory =
+                Path.Combine(
+                    WorkDirectory,
+                    "jb",
+                    Guid.NewGuid().ToString("N"));
+
+            var jbProgress =
+                new Progress<double>(value =>
+                {
+                    job.Progress = value;
+                });
+
+            var jbExtractionResult =
+                await jbExtractionService.ExtractAsync(
+                    decryptResult.OutputPath,
+                    temporaryJbDirectory,
+                    jbProgress);
+
+            if (!jbExtractionResult.Success)
+            {
+                job.Status = "Error";
+                job.CurrentStage = "Error";
                 job.Details =
-                    $"JB folder copied to: {job.OutputPath}";
+                    jbExtractionResult.Error;
+                return;
+            }
+
+            if (RemovePs3Update)
+            {
+                var ps3UpdateDirectory =
+                    Path.Combine(
+                        temporaryJbDirectory,
+                        "PS3_UPDATE");
+
+                if (Directory.Exists(ps3UpdateDirectory))
+                {
+                    Directory.Delete(
+                        ps3UpdateDirectory,
+                        recursive: true);
+                }
+            }
+            var finalJbDestination =
+                Path.Combine(
+                    destinationPath,
+                    gameFolderName);
+
+            job.Status = "Copying";
+            job.CurrentStage = "Copying JB folder";
+            job.Progress = 0;
+            job.TransferSpeedMbps = 0;
+            job.EtaText = string.Empty;
+            job.Details =
+                "Copying JB folder to destination...";
+
+            var folderCopyProgress =
+                new Progress<TransferProgress>(value =>
+                {
+                    job.Progress =
+                        value.Percentage;
+
+                    job.TransferSpeedMbps =
+                        value.MegabytesPerSecond;
+
+                    if (value.EstimatedRemaining.HasValue)
+                    {
+                        var eta =
+                            value.EstimatedRemaining.Value;
+
+                        job.EtaText =
+                            $"Copying — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s — " +
+                            $"{eta:hh\\:mm\\:ss} remaining";
+                    }
+                    else
+                    {
+                        job.EtaText =
+                            $"Copying — " +
+                            $"{value.MegabytesPerSecond:F1} MB/s";
+                    }
+                });
+
+            var folderDeliveryResult =
+                await folderDeliveryService.CopyAsync(
+                    temporaryJbDirectory,
+                    finalJbDestination,
+                    folderCopyProgress);
+
+            if (!folderDeliveryResult.Success)
+            {
+                job.Status = "Error";
+                job.CurrentStage = "Error";
+                job.Details =
+                    folderDeliveryResult.Error;
+                return;
+            }
+
+            job.OutputPath =
+                folderDeliveryResult.DestinationPath;
+        }
+
+        try
+        {
+            if (File.Exists(
+                    decryptResult.OutputPath))
+            {
+                File.Delete(
+                    decryptResult.OutputPath);
+            }
+
+            if (temporaryExtractionDirectory is not null &&
+                Directory.Exists(
+                    temporaryExtractionDirectory))
+            {
+                Directory.Delete(
+                    temporaryExtractionDirectory,
+                    recursive: true);
+            }
+
+            if (temporaryJbDirectory is not null &&
+                Directory.Exists(
+                    temporaryJbDirectory))
+            {
+                Directory.Delete(
+                    temporaryJbDirectory,
+                    recursive: true);
+            }
+            if (job.SourceType == GameSourceType.Url &&
+                !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
+                File.Exists(job.LocalSourcePath))
+            {
+                var downloadDirectory =
+                    Path.GetDirectoryName(job.LocalSourcePath);
+
+                File.Delete(job.LocalSourcePath);
+
+                if (!string.IsNullOrWhiteSpace(downloadDirectory) &&
+                    Directory.Exists(downloadDirectory) &&
+                    !Directory.EnumerateFileSystemEntries(downloadDirectory).Any())
+                {
+                    Directory.Delete(downloadDirectory);
+                }
+
+                job.LocalSourcePath = null;
             }
         }
+        catch (Exception ex)
+        {
+            job.Status = "Complete";
+            job.CurrentStage = "Complete";
+            job.Progress = 100;
+            job.EtaText = string.Empty;
+            job.Details =
+                $"Output completed successfully, but temporary cleanup failed: {ex.Message}";
+            return;
+        }
+
+        job.Status = "Complete";
+        job.CurrentStage = "Complete";
+        job.Progress = 100;
+        job.EtaText = string.Empty;
+
+        if (job.OutputFormat ==
+            OutputFormat.DecryptedIso)
+        {
+            job.Details =
+                $"Decrypted ISO copied to: {job.OutputPath}";
+        }
+        else
+        {
+            job.Details =
+                $"JB folder copied to: {job.OutputPath}";
+        }
+        
     }
+
 
     [RelayCommand]
     private async Task BrowseClassicPs3Dec()
