@@ -1,5 +1,6 @@
 ﻿using PS3Butler.Models;
 using PS3Butler.Services;
+using PS3Butler.Services.Storage;
 using System;
 using System.IO;
 using System.Linq;
@@ -12,13 +13,34 @@ public sealed class JobExecutionService
 {
     private readonly MetadataCacheService _metadataCacheService;
     private readonly JobExecutionOptions _options;
+    private readonly IDiskBudgetService _diskBudgetService;
+
+    private const long WorkSafetyMarginBytes =
+        2L * 1024 * 1024 * 1024;
 
     public JobExecutionService(
         MetadataCacheService metadataCacheService,
         JobExecutionOptions options)
+        : this(
+            metadataCacheService,
+            options,
+            new DiskBudgetService())
     {
-        _metadataCacheService = metadataCacheService;
-        _options = options;
+    }
+
+    public JobExecutionService(
+        MetadataCacheService metadataCacheService,
+        JobExecutionOptions options,
+        IDiskBudgetService diskBudgetService)
+    {
+        _metadataCacheService =
+            metadataCacheService;
+
+        _options =
+            options;
+
+        _diskBudgetService =
+            diskBudgetService;
     }
 
     public async Task ProcessAsync(
@@ -105,7 +127,40 @@ public sealed class JobExecutionService
             job.Details =
                 "Extracting ISO from archive...";
 
-            temporaryExtractionDirectory =
+                var archiveSize =
+                    new FileInfo(sourcePath).Length;
+
+                /*
+                 * Until archive inspection reports the ISO's declared
+                 * uncompressed size, use a conservative estimate.
+                 *
+                 * PS3 disc images often compress poorly, but 2x the archive
+                 * size gives us useful protection without pretending we know
+                 * the exact extracted size yet.
+                 */
+                var estimatedExtractedIsoSize =
+                    archiveSize > long.MaxValue / 2
+                        ? long.MaxValue
+                        : archiveSize * 2;
+
+                var extractionDiskBudget =
+                    await _diskBudgetService.CheckAsync(
+                        _options.WorkDirectory,
+                        estimatedExtractedIsoSize,
+                        WorkSafetyMarginBytes,
+                        cancellationToken);
+
+                if (!extractionDiskBudget.IsSufficient)
+                {
+                    job.Status = "Error";
+                    job.CurrentStage = "Error";
+                    job.Details =
+                        $"Not enough work-disk space to extract archive. " +
+                        extractionDiskBudget.Message;
+                    return;
+                }
+
+                temporaryExtractionDirectory =
                 Path.Combine(
                     _options.WorkDirectory,
                     "archive",
@@ -430,7 +485,26 @@ public sealed class JobExecutionService
 
                 return;
             }
-            
+            var encryptedIsoSize =
+                new FileInfo(inputIsoPath).Length;
+
+            var decryptionDiskBudget =
+                await _diskBudgetService.CheckAsync(
+                    _options.WorkDirectory,
+                    encryptedIsoSize,
+                    WorkSafetyMarginBytes,
+                    cancellationToken);
+
+            if (!decryptionDiskBudget.IsSufficient)
+            {
+                job.Status = "Error";
+                job.CurrentStage = "Error";
+                job.Details =
+                    $"Not enough work-disk space to decrypt ISO. " +
+                    decryptionDiskBudget.Message;
+                return;
+            }
+
             job.Status = "Decrypting";
         job.CurrentStage = "Decrypting";
         job.Progress = 0;
