@@ -1,5 +1,6 @@
 ﻿using PS3Butler.Models;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -22,7 +23,18 @@ public class GamePreflightService
     private readonly MetadataCacheService _metadataCacheService;
     private readonly string _isoDestinationDirectory;
     private readonly string _jbDestinationDirectory;
+    private readonly Dictionary<
+        string,
+        CachedDestinationIndex> _destinationIndexes =
+            new(
+                StringComparer.OrdinalIgnoreCase);
 
+    private sealed class CachedDestinationIndex
+    {
+        public required DestinationLibraryIndex Index { get; init; }
+
+        public DateTime DirectoryLastWriteUtc { get; init; }
+    }
     public GamePreflightService(
         KeyIndexService keyIndex,
         ArchiveInspectionService archiveInspectionService,
@@ -130,11 +142,13 @@ public class GamePreflightService
 
         if (job.OutputFormat == OutputFormat.EncryptedIsoWithKey)
         {
+            var destinationIndex =
+                GetDestinationIndex(
+                    destinationDirectory);
+
             var existingEncryptedIso =
-                _destinationInspectionService
-                    .FindExistingIsoOnly(
-                        destinationDirectory,
-                        gameName);
+                destinationIndex.FindExistingIso(
+                    gameName);
 
             if (existingEncryptedIso is not null)
             {
@@ -184,9 +198,12 @@ public class GamePreflightService
 
         else
         {
+            var destinationIndex =
+                GetDestinationIndex(
+                    destinationDirectory);
+
             var existingGame =
-                _destinationInspectionService.FindExistingGame(
-                    destinationDirectory,
+                destinationIndex.FindExistingGame(
                     gameName);
 
             if (existingGame is not null)
@@ -210,9 +227,12 @@ public class GamePreflightService
             job.OutputFormat == OutputFormat.JbFolder &&
             !string.IsNullOrWhiteSpace(_isoDestinationDirectory))
         {
+            var isoDestinationIndex =
+                GetDestinationIndex(
+                    _isoDestinationDirectory);
+
             var existingIso =
-                _destinationInspectionService.FindExistingGame(
-                    _isoDestinationDirectory,
+                isoDestinationIndex.FindExistingGame(
                     gameName);
 
             if (existingIso is not null)
@@ -243,11 +263,13 @@ public class GamePreflightService
 
             if (!string.IsNullOrWhiteSpace(jbDirectoryToCheck))
             {
+                var jbDestinationIndex =
+                    GetDestinationIndex(
+                        jbDirectoryToCheck);
+
                 var existingJbGame =
-                    _destinationInspectionService
-                        .FindJbGameByTitleId(
-                            jbDirectoryToCheck,
-                            cachedMetadata.TitleId);
+                    jbDestinationIndex.FindJbGameByTitleId(
+                        cachedMetadata.TitleId);
 
                 if (existingJbGame is not null)
                 {
@@ -302,5 +324,54 @@ public class GamePreflightService
                 $"ISO: {job.DetectedIsoName} | " +
                 $"Key found: {Path.GetFileName(keyPath)}";
         }
+    }
+    private DestinationLibraryIndex GetDestinationIndex(
+        string destinationDirectory)
+    {
+        var cacheKey =
+            destinationDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
+
+        DateTime directoryLastWriteUtc;
+
+        try
+        {
+            directoryLastWriteUtc =
+                Directory.Exists(destinationDirectory)
+                    ? Directory.GetLastWriteTimeUtc(
+                        destinationDirectory)
+                    : DateTime.MinValue;
+        }
+        catch
+        {
+            directoryLastWriteUtc =
+                DateTime.MinValue;
+        }
+
+        if (_destinationIndexes.TryGetValue(
+                cacheKey,
+                out var cachedIndex) &&
+            cachedIndex.DirectoryLastWriteUtc ==
+                directoryLastWriteUtc)
+        {
+            return cachedIndex.Index;
+        }
+
+        var index =
+            _destinationInspectionService.CreateIndex(
+                destinationDirectory);
+
+        _destinationIndexes[cacheKey] =
+            new CachedDestinationIndex
+            {
+                Index =
+                    index,
+
+                DirectoryLastWriteUtc =
+                    directoryLastWriteUtc
+            };
+
+        return index;
     }
 }

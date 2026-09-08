@@ -11,6 +11,14 @@ public class DestinationInspectionService
     private readonly ParamSfoService _paramSfoService =
         new();
 
+    public DestinationLibraryIndex CreateIndex(
+        string destinationDirectory)
+    {
+        return new DestinationLibraryIndex(
+            destinationDirectory,
+            _paramSfoService);
+    }
+
     public List<ExistingGame> ScanJbGames(
         string destinationDirectory)
     {
