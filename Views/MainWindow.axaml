@@ -188,11 +188,13 @@
 
 							<Button
 								Content="Add Local Games..."
-								Command="{Binding AddLocalGamesCommand}" />
+								Command="{Binding AddLocalGamesCommand}"
+								IsEnabled="{Binding CanEditQueue}" />
 
 							<Button
 								Content="Process Ready Jobs"
-								Command="{Binding ProcessReadyJobsCommand}" />
+								Command="{Binding ProcessReadyJobsCommand}"
+								IsEnabled="{Binding CanEditQueue}" />
 							
 							<Button
 								Content="Pause Download"
@@ -220,34 +222,40 @@
 							<Button
 								Grid.Column="1"
 								Content="Add URL"
-								Command="{Binding AddUrlCommand}" />
-
+								Command="{Binding AddUrlCommand}"
+								IsEnabled="{Binding CanEditQueue}" />
+							
 						</Grid>
 
 						<StackPanel
 							Orientation="Horizontal"
 							Spacing="10">
-							
+
 							<Button
 								Content="Preflight Queue"
-								Command="{Binding PreflightQueueCommand}" />
-							
+								Command="{Binding PreflightQueueCommand}"
+								IsEnabled="{Binding CanEditQueue}" />
+
 							<Button
 								Content="Retry Selected"
-								Command="{Binding RetrySelectedJobCommand}" />
-							
+								Command="{Binding RetrySelectedJobCommand}"
+								IsEnabled="{Binding CanEditQueue}" />
+
 							<Button
 								Content="Remove Selected"
-								Command="{Binding RemoveSelectedJobCommand}" />
+								Command="{Binding RemoveSelectedJobCommand}"
+								IsEnabled="{Binding CanEditQueue}" />
 
 							<Button
 								Content="Clear Completed"
-								Command="{Binding ClearCompletedJobsCommand}" />
+								Command="{Binding ClearCompletedJobsCommand}"
+								IsEnabled="{Binding CanEditQueue}" />
 
 							<Button
 								Content="Clear Queue"
-								Command="{Binding ClearQueueCommand}" />
-
+								Command="{Binding ClearQueueCommand}"
+								IsEnabled="{Binding CanEditQueue}" />
+							
 						</StackPanel>
 
 					</StackPanel>
@@ -282,6 +290,7 @@
 												Width="180"
 												HorizontalAlignment="Left"
 												ItemsSource="{x:Static models:GameJob.AvailableOutputFormats}"
+												IsEnabled="{Binding $parent[Window].DataContext.CanEditQueue}"
 												SelectedValue="{Binding OutputFormat}"
 												SelectedValueBinding="{ReflectionBinding Path=Value}">
 												<ComboBox.ItemTemplate>
@@ -300,13 +309,15 @@
 												<TextBox
 													Grid.Column="0"
 													Watermark="Destination override (blank = default)"
-													Text="{Binding DestinationOverride, Mode=TwoWay}" />
+													Text="{Binding DestinationOverride, Mode=TwoWay}"
+													IsEnabled="{Binding $parent[Window].DataContext.CanEditQueue}" />
 
 												<Button
 													Grid.Column="1"
 													Content="Browse..."
 													Command="{Binding $parent[Window].DataContext.BrowseJobDestinationCommand}"
-													CommandParameter="{Binding}" />
+													CommandParameter="{Binding}"
+													IsEnabled="{Binding $parent[Window].DataContext.CanEditQueue}"	/>
 
 											</Grid>
 											<TextBlock

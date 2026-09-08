@@ -66,6 +66,19 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string UrlToAdd { get; set; } = string.Empty;
+    
+    [ObservableProperty]
+    public partial bool IsPipelineActive { get; set; }
+
+    public bool CanEditQueue =>
+    !IsPipelineActive;
+
+    partial void OnIsPipelineActiveChanged(
+        bool value)
+    {
+        OnPropertyChanged(
+            nameof(CanEditQueue));
+    }
 
     public string SettingsLocation => _settingsService.SettingsFilePath;
 
@@ -303,10 +316,18 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ProcessReadyJobs()
     {
+        if (IsPipelineActive)
+        {
+            return;
+        }
+
+        IsPipelineActive = true;
+
         _pipelineCancellationTokenSource?.Dispose();
 
         _pipelineCancellationTokenSource =
             new CancellationTokenSource();
+
 
         var pipelineCancellationToken =
             _pipelineCancellationTokenSource.Token;
@@ -550,6 +571,7 @@ public partial class MainViewModel : ViewModelBase
         _pipelineCancellationTokenSource?.Dispose();
         _pipelineCancellationTokenSource = null;
 
+        IsPipelineActive = false;
     }
 
     private async Task ProcessSingleJobAsync(
