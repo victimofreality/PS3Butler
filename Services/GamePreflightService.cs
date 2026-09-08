@@ -23,6 +23,7 @@ public class GamePreflightService
     private readonly MetadataCacheService _metadataCacheService;
     private readonly string _isoDestinationDirectory;
     private readonly string _jbDestinationDirectory;
+    private readonly PreflightReservationSet _reservations;
     private readonly Dictionary<
         string,
         CachedDestinationIndex> _destinationIndexes =
@@ -42,6 +43,25 @@ public class GamePreflightService
         MetadataCacheService metadataCacheService,
         string isoDestinationDirectory,
         string jbDestinationDirectory)
+        : this(
+            keyIndex,
+            archiveInspectionService,
+            destinationInspectionService,
+            metadataCacheService,
+            isoDestinationDirectory,
+            jbDestinationDirectory,
+            new PreflightReservationSet())
+    {
+    }
+
+    public GamePreflightService(
+        KeyIndexService keyIndex,
+        ArchiveInspectionService archiveInspectionService,
+        DestinationInspectionService destinationInspectionService,
+        MetadataCacheService metadataCacheService,
+        string isoDestinationDirectory,
+        string jbDestinationDirectory,
+        PreflightReservationSet reservations)
     {
         _keyIndex = keyIndex;
         _archiveInspectionService = archiveInspectionService;
@@ -49,8 +69,9 @@ public class GamePreflightService
         _metadataCacheService = metadataCacheService;
         _isoDestinationDirectory = isoDestinationDirectory;
         _jbDestinationDirectory = jbDestinationDirectory;
+        _reservations = reservations;
     }
-
+    
     public async Task PreflightAsync(GameJob job)
     {
         job.KeyPath = null;
@@ -137,6 +158,17 @@ public class GamePreflightService
                 job.OutputFormat == OutputFormat.JbFolder
                     ? "JB destination is not configured."
                     : "ISO destination is not configured.";
+            return;
+        }
+
+        if (_reservations.IsGameReserved(
+                job,
+                destinationDirectory,
+                gameName))
+        {
+            job.Status = "Already exists";
+            job.Details =
+                $"Another queued job already reserves: {gameName}";
             return;
         }
 
@@ -251,6 +283,23 @@ public class GamePreflightService
         if (cachedMetadata is not null &&
             !string.IsNullOrWhiteSpace(cachedMetadata.TitleId))
         {
+            if (_reservations.IsTitleIdReserved(
+                    job,
+                    destinationDirectory,
+                    cachedMetadata.TitleId))
+            {
+                job.TitleId =
+                    cachedMetadata.TitleId;
+
+                job.Status =
+                    "Already exists";
+
+                job.Details =
+                    $"Another queued job already reserves Title ID " +
+                    $"{cachedMetadata.TitleId}.";
+
+                return;
+            }
             /*
              * For normal destinations, always check the JB library by
              * TITLE_ID so an ISO job does not create a duplicate of a
@@ -309,6 +358,13 @@ public class GamePreflightService
         }
 
         job.DiscKey = discKey;
+
+        _reservations.Reserve(
+            job,
+            destinationDirectory,
+            gameName,
+            cachedMetadata?.TitleId);
+
         job.Status = "Ready";
 
         if (extension.Equals(

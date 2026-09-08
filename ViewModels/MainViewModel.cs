@@ -258,10 +258,22 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task PreflightQueue()
     {
-        _keyIndexService.Build(RedumpKeysPath);
+        var reservations =
+            new PreflightReservationSet();
+
+        await PreflightQueueWithReservations(
+            reservations);
+    }
+
+    private async Task PreflightQueueWithReservations(
+        PreflightReservationSet reservations)
+    {
+        _keyIndexService.Build(
+            RedumpKeysPath);
 
         var archiveInspectionService =
-            new ArchiveInspectionService(SevenZipPath);
+            new ArchiveInspectionService(
+                SevenZipPath);
 
         var destinationInspectionService =
             new DestinationInspectionService();
@@ -273,7 +285,8 @@ public partial class MainViewModel : ViewModelBase
                 destinationInspectionService,
                 _metadataCacheService,
                 IsoDestinationPath,
-                JbDestinationPath);
+                JbDestinationPath,
+                reservations);
 
         foreach (var job in Jobs)
         {
@@ -282,7 +295,8 @@ public partial class MainViewModel : ViewModelBase
                 continue;
             }
 
-            await preflightService.PreflightAsync(job);
+            await preflightService.PreflightAsync(
+                job);
         }
     }
 
@@ -297,13 +311,17 @@ public partial class MainViewModel : ViewModelBase
         var pipelineCancellationToken =
             _pipelineCancellationTokenSource.Token;
 
-            /*
-             * Preflight everything we can before starting.
-             *
-             * Local jobs can become Ready immediately. URL jobs that have not
-             * downloaded yet remain Waiting until their download completes.
-             */
-        await PreflightQueue();
+        /*
+         * Preflight everything we can before starting.
+         *
+         * Local jobs can become Ready immediately. URL jobs that have not
+         * downloaded yet remain Waiting until their download completes.
+         */
+        var preflightReservations =
+            new PreflightReservationSet();
+
+        await PreflightQueueWithReservations(
+            preflightReservations);
 
         var queuedJobs =
             Jobs.ToList();
@@ -383,7 +401,8 @@ public partial class MainViewModel : ViewModelBase
                 destinationInspectionService,
                 _metadataCacheService,
                 IsoDestinationPath,
-                JbDestinationPath);
+                JbDestinationPath,
+                preflightReservations);
 
         /*
          * Downloads remain deliberately sequential.
