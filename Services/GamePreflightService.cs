@@ -71,7 +71,7 @@ public class GamePreflightService
         _jbDestinationDirectory = jbDestinationDirectory;
         _reservations = reservations;
     }
-    
+
     public async Task PreflightAsync(GameJob job)
     {
         job.KeyPath = null;
@@ -175,7 +175,7 @@ public class GamePreflightService
         if (job.OutputFormat == OutputFormat.EncryptedIsoWithKey)
         {
             var destinationIndex =
-                GetDestinationIndex(
+                await GetDestinationIndexAsync(
                     destinationDirectory);
 
             var existingEncryptedIso =
@@ -231,7 +231,7 @@ public class GamePreflightService
         else
         {
             var destinationIndex =
-                GetDestinationIndex(
+                await GetDestinationIndexAsync(
                     destinationDirectory);
 
             var existingGame =
@@ -260,7 +260,7 @@ public class GamePreflightService
             !string.IsNullOrWhiteSpace(_isoDestinationDirectory))
         {
             var isoDestinationIndex =
-                GetDestinationIndex(
+                await GetDestinationIndexAsync(
                     _isoDestinationDirectory);
 
             var existingIso =
@@ -313,7 +313,7 @@ public class GamePreflightService
             if (!string.IsNullOrWhiteSpace(jbDirectoryToCheck))
             {
                 var jbDestinationIndex =
-                    GetDestinationIndex(
+                    await GetDestinationIndexAsync(
                         jbDirectoryToCheck);
 
                 var existingJbGame =
@@ -381,7 +381,7 @@ public class GamePreflightService
                 $"Key found: {Path.GetFileName(keyPath)}";
         }
     }
-    private DestinationLibraryIndex GetDestinationIndex(
+    private async Task<DestinationLibraryIndex> GetDestinationIndexAsync(
         string destinationDirectory)
     {
         var cacheKey =
@@ -389,21 +389,22 @@ public class GamePreflightService
                 Path.DirectorySeparatorChar,
                 Path.AltDirectorySeparatorChar);
 
-        DateTime directoryLastWriteUtc;
-
-        try
-        {
-            directoryLastWriteUtc =
-                Directory.Exists(destinationDirectory)
-                    ? Directory.GetLastWriteTimeUtc(
-                        destinationDirectory)
-                    : DateTime.MinValue;
-        }
-        catch
-        {
-            directoryLastWriteUtc =
-                DateTime.MinValue;
-        }
+        var directoryLastWriteUtc =
+            await Task.Run(() =>
+            {
+                try
+                {
+                    return Directory.Exists(
+                               destinationDirectory)
+                        ? Directory.GetLastWriteTimeUtc(
+                            destinationDirectory)
+                        : DateTime.MinValue;
+                }
+                catch
+                {
+                    return DateTime.MinValue;
+                }
+            });
 
         if (_destinationIndexes.TryGetValue(
                 cacheKey,
@@ -414,9 +415,15 @@ public class GamePreflightService
             return cachedIndex.Index;
         }
 
+        /*
+         * DestinationLibraryIndex construction enumerates the destination
+         * library and may touch a network share. Keep that blocking filesystem
+         * work off the Avalonia UI thread.
+         */
         var index =
-            _destinationInspectionService.CreateIndex(
-                destinationDirectory);
+            await Task.Run(() =>
+                _destinationInspectionService.CreateIndex(
+                    destinationDirectory));
 
         _destinationIndexes[cacheKey] =
             new CachedDestinationIndex

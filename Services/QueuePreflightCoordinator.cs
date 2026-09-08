@@ -23,9 +23,6 @@ public sealed class QueuePreflightCoordinator
         string jbDestinationPath,
         PreflightReservationSet reservations)
     {
-        keyIndexService.Build(
-            redumpKeysPath);
-
         var archiveInspectionService =
             new ArchiveInspectionService(
                 sevenZipPath);
@@ -52,6 +49,15 @@ public sealed class QueuePreflightCoordinator
         string jbDestinationPath,
         PreflightReservationSet reservations)
     {
+        /*
+         * The key directory can contain thousands of files. Enumerating it is
+         * synchronous filesystem work, so do it away from the Avalonia UI
+         * thread before constructing the preflight service.
+         */
+        await Task.Run(() =>
+            keyIndexService.Build(
+                redumpKeysPath));
+
         var preflightService =
             CreateService(
                 keyIndexService,
