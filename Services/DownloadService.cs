@@ -41,32 +41,7 @@ public class DownloadService
 
         Directory.CreateDirectory(destinationDirectory);
 
-        string fileName;
-
-        try
-        {
-            fileName =
-                Path.GetFileName(
-                    Uri.UnescapeDataString(
-                        uri.AbsolutePath));
-        }
-        catch
-        {
-            fileName = string.Empty;
-        }
-
-        if (string.IsNullOrWhiteSpace(fileName))
-        {
-            return (
-                false,
-                string.Empty,
-                "Could not determine a filename from the URL.");
-        }
-
-        var outputPath =
-            Path.Combine(
-                destinationDirectory,
-                fileName);
+        string? outputPath = null;
 
         try
         {
@@ -78,11 +53,38 @@ public class DownloadService
 
             response.EnsureSuccessStatusCode();
 
+            /*
+             * Prefer the filename supplied by the server. This covers download
+             * URLs whose path is just an ID, token, or script endpoint.
+             *
+             * Fall back to the final response URI, then the originally requested
+             * URI when Content-Disposition does not provide a usable filename.
+             */
+            var fileName =
+                TryGetContentDispositionFileName(response) ??
+                TryGetUrlFileName(
+                    response.RequestMessage?.RequestUri) ??
+                TryGetUrlFileName(uri);
+
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return (
+                    false,
+                    string.Empty,
+                    "Could not determine a filename from the HTTP response or URL.");
+            }
+
+            outputPath =
+                Path.Combine(
+                    destinationDirectory,
+                    fileName);
+
             var totalBytes =
                 response.Content.Headers.ContentLength;
 
             await using var sourceStream =
-                await response.Content.ReadAsStreamAsync();
+                await response.Content.ReadAsStreamAsync(
+                    cancellationToken);
 
             await using var destinationStream =
                 new FileStream(
@@ -181,17 +183,8 @@ public class DownloadService
         }
         catch (OperationCanceledException)
         {
-            try
-            {
-                if (File.Exists(outputPath))
-                {
-                    File.Delete(outputPath);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup only.
-            }
+            TryDeletePartialDownload(
+                outputPath);
 
             return (
                 false,
@@ -200,23 +193,15 @@ public class DownloadService
         }
         catch (Exception ex)
         {
-            try
-            {
-                if (File.Exists(outputPath))
-                {
-                    File.Delete(outputPath);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup only.
-            }
+            TryDeletePartialDownload(
+                outputPath);
 
             return (
                 false,
                 string.Empty,
                 $"Download failed: {ex.Message}");
         }
+
         progress?.Report(
             new TransferProgress
             {
@@ -228,7 +213,144 @@ public class DownloadService
 
         return (
             true,
-            outputPath,
+            outputPath!,
             string.Empty);
     }
+
+    private static string? TryGetContentDispositionFileName(
+        HttpResponseMessage response)
+    {
+        var contentDisposition =
+            response.Content.Headers.ContentDisposition;
+
+        var candidate =
+            contentDisposition?.FileNameStar ??
+            contentDisposition?.FileName;
+
+        return SanitizeFileName(
+            candidate);
+    }
+
+    private static string? TryGetUrlFileName(
+        Uri? uri)
+    {
+        if (uri is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return SanitizeFileName(
+                Uri.UnescapeDataString(
+                    uri.AbsolutePath));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? SanitizeFileName(
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var candidate =
+            value.Trim().Trim('"');
+
+        /*
+         * Some servers expose filename*=UTF-8''name%20here.iso.
+         * FileNameStar is normally decoded by HttpClient, but accepting the
+         * raw RFC 5987 form costs almost nothing and makes this more robust.
+         */
+        var encodedSeparatorIndex =
+            candidate.IndexOf(
+                "''",
+                StringComparison.Ordinal);
+
+        if (encodedSeparatorIndex >= 0 &&
+            encodedSeparatorIndex + 2 < candidate.Length)
+        {
+            candidate =
+                candidate[
+                    (encodedSeparatorIndex + 2)..];
+        }
+
+        try
+        {
+            candidate =
+                Uri.UnescapeDataString(
+                    candidate);
+        }
+        catch
+        {
+            // Keep the original candidate if percent-decoding is malformed.
+        }
+
+        /*
+         * Never allow a server-provided name to escape the download directory.
+         * Treat both slash styles as separators regardless of host platform.
+         */
+        candidate =
+            candidate.Replace(
+                '\\',
+                '/');
+
+        var lastSlash =
+            candidate.LastIndexOf('/');
+
+        if (lastSlash >= 0)
+        {
+            candidate =
+                candidate[
+                    (lastSlash + 1)..];
+        }
+
+        foreach (var invalidCharacter in
+                 Path.GetInvalidFileNameChars())
+        {
+            candidate =
+                candidate.Replace(
+                    invalidCharacter,
+                    '_');
+        }
+
+        candidate =
+            candidate.Trim();
+
+        if (string.IsNullOrWhiteSpace(candidate) ||
+            candidate == "." ||
+            candidate == "..")
+        {
+            return null;
+        }
+
+        return candidate;
+    }
+
+    private static void TryDeletePartialDownload(
+        string? outputPath)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(outputPath))
+            {
+                File.Delete(outputPath);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup only.
+        }
+    }
+
 }
