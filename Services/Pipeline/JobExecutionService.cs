@@ -456,48 +456,6 @@ public sealed class JobExecutionService
                         stagedKeyPath);
                 }
 
-                try
-                {
-                    if (job.SourceType == GameSourceType.Url &&
-                        !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
-                        File.Exists(job.LocalSourcePath))
-                    {
-                        var downloadDirectory =
-                            Path.GetDirectoryName(
-                                job.LocalSourcePath);
-
-                        File.Delete(
-                            job.LocalSourcePath);
-
-                        if (!string.IsNullOrWhiteSpace(
-                                downloadDirectory) &&
-                            Directory.Exists(
-                                downloadDirectory) &&
-                            !Directory
-                                .EnumerateFileSystemEntries(
-                                    downloadDirectory)
-                                .Any())
-                        {
-                            Directory.Delete(
-                                downloadDirectory);
-                        }
-
-                        job.LocalSourcePath =
-                            null;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    job.Status = "Complete";
-                    job.CurrentStage = "Complete";
-                    job.Progress = 100;
-                    job.EtaText = string.Empty;
-                    job.Details =
-                        $"Encrypted ISO and key copied successfully, " +
-                        $"but temporary cleanup failed: {ex.Message}";
-                    return;
-                }
-
                 job.Status = "Complete";
                 job.CurrentStage = "Complete";
                 job.Progress = 100;
@@ -861,24 +819,6 @@ public sealed class JobExecutionService
                     Directory.Delete(
                         temporaryJbDirectory,
                         recursive: true);
-                }
-                if (job.SourceType == GameSourceType.Url &&
-                    !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
-                    File.Exists(job.LocalSourcePath))
-                {
-                    var downloadDirectory =
-                        Path.GetDirectoryName(job.LocalSourcePath);
-
-                    File.Delete(job.LocalSourcePath);
-
-                    if (!string.IsNullOrWhiteSpace(downloadDirectory) &&
-                        Directory.Exists(downloadDirectory) &&
-                        !Directory.EnumerateFileSystemEntries(downloadDirectory).Any())
-                    {
-                        Directory.Delete(downloadDirectory);
-                    }
-
-                    job.LocalSourcePath = null;
                 }
             }
             catch (Exception ex)
