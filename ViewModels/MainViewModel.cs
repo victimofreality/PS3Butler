@@ -103,6 +103,17 @@ public partial class MainViewModel : ViewModelBase
         Ps3DecThreadCount = _settings.Ps3DecThreadCount;
         RemovePs3Update = _settings.RemovePs3Update;
 
+        var staleArtifactsRemoved =
+            StaleStagingCleanupService.Cleanup(
+                IsoDestinationPath,
+                JbDestinationPath);
+
+        if (staleArtifactsRemoved > 0)
+        {
+            SettingsStatus =
+                $"Removed {staleArtifactsRemoved} stale staging artifact(s).";
+        }
+
         RefreshToolStatus();
     }
 
