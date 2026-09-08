@@ -342,6 +342,34 @@ public partial class MainViewModel : ViewModelBase
             var pipelineCancellationToken =
                 _pipelineCancellationTokenSource.Token;
 
+            var runSettings =
+                new PipelineRunSettings
+                {
+                    RedrrxPs3DecPath =
+                        RedrrxPs3DecPath,
+
+                    SevenZipPath =
+                        SevenZipPath,
+
+                    RedumpKeysPath =
+                        RedumpKeysPath,
+
+                    WorkDirectory =
+                        WorkDirectory,
+
+                    IsoDestinationPath =
+                        IsoDestinationPath,
+
+                    JbDestinationPath =
+                        JbDestinationPath,
+
+                    Ps3DecThreadCount =
+                        Ps3DecThreadCount,
+
+                    RemovePs3Update =
+                        RemovePs3Update
+                };
+
             /*
              * Preflight everything we can before starting.
              *
@@ -351,7 +379,13 @@ public partial class MainViewModel : ViewModelBase
             var preflightReservations =
                 new PreflightReservationSet();
 
-            await PreflightQueueWithReservations(
+            await _preflightCoordinator.PreflightQueueAsync(
+                Jobs,
+                _keyIndexService,
+                runSettings.RedumpKeysPath,
+                runSettings.SevenZipPath,
+                runSettings.IsoDestinationPath,
+                runSettings.JbDestinationPath,
                 preflightReservations);
 
             var queuedJobs =
@@ -380,6 +414,7 @@ public partial class MainViewModel : ViewModelBase
 
                     await ProcessSingleJobAsync(
                         queuedJob,
+                        runSettings,
                         pipelineCancellationToken);
                 }
                 finally
@@ -418,10 +453,10 @@ public partial class MainViewModel : ViewModelBase
             var preflightService =
                 _preflightCoordinator.CreateService(
                     _keyIndexService,
-                    RedumpKeysPath,
-                    SevenZipPath,
-                    IsoDestinationPath,
-                    JbDestinationPath,
+                    runSettings.RedumpKeysPath,
+                    runSettings.SevenZipPath,
+                    runSettings.IsoDestinationPath,
+                    runSettings.JbDestinationPath,
                     preflightReservations);
 
             /*
@@ -517,7 +552,7 @@ public partial class MainViewModel : ViewModelBase
                 {
                     TemporaryDownloadCleanupService.CleanupDirectory(
                         downloadDirectory,
-                        WorkDirectory);
+                        runSettings.WorkDirectory);
 
                     job.Status = "Error";
                     job.CurrentStage = "Error";
@@ -549,7 +584,7 @@ public partial class MainViewModel : ViewModelBase
                 {
                     TemporaryDownloadCleanupService.CleanupFile(
                         job.LocalSourcePath,
-                        WorkDirectory);
+                        runSettings.WorkDirectory);
 
                     job.LocalSourcePath = null;
                 }
@@ -579,18 +614,32 @@ public partial class MainViewModel : ViewModelBase
 
     private async Task ProcessSingleJobAsync(
         GameJob job,
+        PipelineRunSettings runSettings,
         CancellationToken cancellationToken)
 
     {
         var options = new JobExecutionOptions
         {
-            RedrrxPs3DecPath = RedrrxPs3DecPath,
-            SevenZipPath = SevenZipPath,
-            WorkDirectory = WorkDirectory,
-            IsoDestinationPath = IsoDestinationPath,
-            JbDestinationPath = JbDestinationPath,
-            Ps3DecThreadCount = Ps3DecThreadCount,
-            RemovePs3Update = RemovePs3Update
+            RedrrxPs3DecPath =
+                runSettings.RedrrxPs3DecPath,
+
+            SevenZipPath =
+                runSettings.SevenZipPath,
+
+            WorkDirectory =
+                runSettings.WorkDirectory,
+
+            IsoDestinationPath =
+                runSettings.IsoDestinationPath,
+
+            JbDestinationPath =
+                runSettings.JbDestinationPath,
+
+            Ps3DecThreadCount =
+                runSettings.Ps3DecThreadCount,
+
+            RemovePs3Update =
+                runSettings.RemovePs3Update
         };
 
         var jobExecutionService =
