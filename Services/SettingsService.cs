@@ -9,13 +9,16 @@ public class SettingsService
 {
     private const string PortableMarkerFileName = "portable.txt";
     private const string SettingsFileName = "settings.json";
+    private const string QueueFileName = "queue.json";
 
     private readonly string _settingsDirectory;
     private readonly string _settingsFilePath;
+    private readonly string _queueFilePath;
 
     public bool IsPortableMode { get; }
 
     public string SettingsFilePath => _settingsFilePath;
+    public string QueueFilePath => _queueFilePath;
 
     public SettingsService()
     {
@@ -37,6 +40,7 @@ public class SettingsService
         }
 
         _settingsFilePath = Path.Combine(_settingsDirectory, SettingsFileName);
+        _queueFilePath = Path.Combine(_settingsDirectory, QueueFileName);
     }
 
     public AppSettings Load()

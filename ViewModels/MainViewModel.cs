@@ -23,6 +23,8 @@ public partial class MainViewModel : ViewModelBase
     private readonly Window _window;
     private readonly KeyIndexService _keyIndexService;
     private readonly MetadataCacheService _metadataCacheService;
+    private readonly QueueStateService _queueStateService;
+    private bool _isRestoringQueue;
     private CancellationTokenSource? _pipelineCancellationTokenSource;
     private CancellationTokenSource? _downloadCancellationTokenSource;
     private PauseTokenSource? _downloadPauseTokenSource;
@@ -86,12 +88,25 @@ public partial class MainViewModel : ViewModelBase
     {
         _window = window;
 
-        _settingsService = new SettingsService();
+        _settingsService =
+            new SettingsService();
+
         _metadataCacheService =
-            new MetadataCacheService(_settingsService);
-        _settings = _settingsService.Load();
-        _keyIndexService = new KeyIndexService();
-        _keyIndexService.Build(_settings.RedumpKeysPath);
+            new MetadataCacheService(
+                _settingsService);
+
+        _queueStateService =
+            new QueueStateService(
+                _settingsService);
+
+        _settings =
+            _settingsService.Load();
+
+        _keyIndexService =
+            new KeyIndexService();
+
+        _keyIndexService.Build(
+            _settings.RedumpKeysPath);
 
 
         RedrrxPs3DecPath = _settings.RedrrxPs3DecPath;
@@ -102,6 +117,11 @@ public partial class MainViewModel : ViewModelBase
         JbDestinationPath = _settings.JbDestinationPath;
         Ps3DecThreadCount = _settings.Ps3DecThreadCount;
         RemovePs3Update = _settings.RemovePs3Update;
+
+        Jobs.CollectionChanged +=
+            Jobs_CollectionChanged;
+
+        RestoreQueue();
 
         var staleArtifactsRemoved =
             StaleStagingCleanupService.Cleanup(
@@ -842,6 +862,83 @@ public partial class MainViewModel : ViewModelBase
     {
         Jobs.Clear();
         SelectedJob = null;
+    }
+
+    private void RestoreQueue()
+    {
+        _isRestoringQueue = true;
+
+        try
+        {
+            foreach (var job in
+                     _queueStateService.Load())
+            {
+                Jobs.Add(job);
+            }
+        }
+        finally
+        {
+            _isRestoringQueue = false;
+        }
+    }
+
+    private void SaveQueueState()
+    {
+        if (_isRestoringQueue)
+        {
+            return;
+        }
+
+        try
+        {
+            _queueStateService.Save(
+                Jobs);
+        }
+        catch (Exception ex)
+        {
+            SettingsStatus =
+                $"Could not save queue: {ex.Message}";
+        }
+    }
+
+    private void Jobs_CollectionChanged(
+        object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (GameJob job in e.OldItems)
+            {
+                job.PropertyChanged -=
+                    Job_PropertyChanged;
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (GameJob job in e.NewItems)
+            {
+                job.PropertyChanged +=
+                    Job_PropertyChanged;
+            }
+        }
+
+        SaveQueueState();
+    }
+
+    private void Job_PropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName ==
+                nameof(GameJob.OutputFormat) ||
+            e.PropertyName ==
+                nameof(GameJob.DestinationOverride) ||
+            e.PropertyName ==
+                nameof(GameJob.Status))
+        {
+            SaveQueueState();
+        }
     }
 
     private static string MakeSafeFolderName(string name)
