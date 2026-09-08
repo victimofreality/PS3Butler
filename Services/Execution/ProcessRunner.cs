@@ -20,7 +20,6 @@ public sealed class ProcessRunner : IProcessRunner
                     new ProcessStartInfo
                     {
                         FileName = request.FileName,
-                        Arguments = request.Arguments,
                         WorkingDirectory =
                             request.WorkingDirectory ??
                             string.Empty,
@@ -32,6 +31,20 @@ public sealed class ProcessRunner : IProcessRunner
                             request.RedirectStandardError
                     }
             };
+
+        if (request.ArgumentList is not null)
+        {
+            foreach (var argument in request.ArgumentList)
+            {
+                process.StartInfo.ArgumentList.Add(
+                    argument);
+            }
+        }
+        else
+        {
+            process.StartInfo.Arguments =
+                request.Arguments;
+        }
 
         try
         {

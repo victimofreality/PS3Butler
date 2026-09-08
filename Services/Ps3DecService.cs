@@ -1,6 +1,7 @@
-﻿using System;
-using System.Diagnostics;
+﻿using PS3Butler.Services.Execution;
+using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
@@ -9,20 +10,34 @@ public class Ps3DecService
 {
     private readonly string _executablePath;
     private readonly int _threadCount;
+    private readonly IProcessRunner _processRunner;
 
     public Ps3DecService(
         string executablePath,
         int threadCount)
+        : this(
+            executablePath,
+            threadCount,
+            new ProcessRunner())
+    {
+    }
+
+    public Ps3DecService(
+        string executablePath,
+        int threadCount,
+        IProcessRunner processRunner)
     {
         _executablePath = executablePath;
         _threadCount = threadCount;
+        _processRunner = processRunner;
     }
 
     public async Task<(bool Success, string OutputPath, string Error)> DecryptAsync(
         string inputIsoPath,
         string discKey,
         string outputDirectory,
-        IProgress<double>? progress = null)
+        IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (!File.Exists(_executablePath))
         {
@@ -40,7 +55,8 @@ public class Ps3DecService
                 "Input ISO not found.");
         }
 
-        Directory.CreateDirectory(outputDirectory);
+        Directory.CreateDirectory(
+            outputDirectory);
 
         var outputName =
             Path.GetFileNameWithoutExtension(inputIsoPath) +
@@ -53,53 +69,58 @@ public class Ps3DecService
 
         if (File.Exists(expectedOutputPath))
         {
-            File.Delete(expectedOutputPath);
+            File.Delete(
+                expectedOutputPath);
         }
 
         var inputSize =
-            new FileInfo(inputIsoPath).Length;
+            new FileInfo(
+                inputIsoPath).Length;
 
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = _executablePath,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
+        var request =
+            new ProcessRunRequest
+            {
+                FileName =
+                    _executablePath,
 
-        startInfo.ArgumentList.Add("--dk");
-        startInfo.ArgumentList.Add(discKey);
+                ArgumentList =
+    new[]
+    {
+        "--dk",
+        discKey,
 
-        startInfo.ArgumentList.Add("--tc");
-        startInfo.ArgumentList.Add(
-            _threadCount.ToString());
+        "--tc",
+        _threadCount.ToString(),
 
-        startInfo.ArgumentList.Add("--output-dir");
-        startInfo.ArgumentList.Add(outputDirectory);
+        "--output-dir",
+        outputDirectory,
 
-        startInfo.ArgumentList.Add("--output-name");
-        startInfo.ArgumentList.Add(outputName);
+        "--output-name",
+        outputName,
 
-        startInfo.ArgumentList.Add("--skip");
-        startInfo.ArgumentList.Add(inputIsoPath);
+        "--skip",
+        inputIsoPath
+    }
 
-        using var process = new Process
-        {
-            StartInfo = startInfo
-        };
+            };
 
-        process.Start();
+        /*
+         * Do not configure an arbitrary timeout here.
+         *
+         * Decrypting a large PS3 ISO can legitimately take a long
+         * time. User cancellation is what should terminate it.
+         */
+        var processTask =
+            _processRunner.RunAsync(
+                request,
+                cancellationToken);
 
-        // Drain both streams in the background so PS3Dec cannot block
-        // because its output buffers filled up.
-        var stdoutTask =
-            process.StandardOutput.ReadToEndAsync();
-
-        var stderrTask =
-            process.StandardError.ReadToEndAsync();
-
-        while (!process.HasExited)
+        /*
+         * ps3decrs does not currently give us convenient structured
+         * percentage progress, so preserve the existing behaviour:
+         * poll the output file size while the process is running.
+         */
+        while (!processTask.IsCompleted)
         {
             if (File.Exists(expectedOutputPath) &&
                 inputSize > 0)
@@ -107,10 +128,13 @@ public class Ps3DecService
                 try
                 {
                     var outputSize =
-                        new FileInfo(expectedOutputPath).Length;
+                        new FileInfo(
+                            expectedOutputPath).Length;
 
                     var percentage =
-                        outputSize * 100.0 / inputSize;
+                        outputSize *
+                        100.0 /
+                        inputSize;
 
                     progress?.Report(
                         Math.Clamp(
@@ -120,30 +144,58 @@ public class Ps3DecService
                 }
                 catch (IOException)
                 {
-                    // The file may briefly be unavailable while PS3Dec
-                    // is writing to it. Just try again on the next poll.
+                    /*
+                     * The file may briefly be unavailable while
+                     * ps3decrs is writing to it. Try again on the
+                     * next poll.
+                     */
                 }
             }
 
             await Task.Delay(100);
         }
 
-        await process.WaitForExitAsync();
+        var result =
+            await processTask;
 
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-
-        if (process.ExitCode != 0)
+        if (result.WasCancelled)
         {
-            var error =
-                string.IsNullOrWhiteSpace(stderr)
-                    ? stdout
-                    : stderr;
+            DeletePartialOutput(
+                expectedOutputPath);
 
             return (
                 false,
                 string.Empty,
-                $"ps3decrs exited with code {process.ExitCode}: {error.Trim()}");
+                "Decryption cancelled.");
+        }
+
+        if (result.TimedOut)
+        {
+            DeletePartialOutput(
+                expectedOutputPath);
+
+            return (
+                false,
+                string.Empty,
+                "Decryption timed out.");
+        }
+
+        if (!result.Success)
+        {
+            DeletePartialOutput(
+                expectedOutputPath);
+
+            var error =
+                string.IsNullOrWhiteSpace(
+                    result.StandardError)
+                    ? result.StandardOutput
+                    : result.StandardError;
+
+            return (
+                false,
+                string.Empty,
+                $"ps3decrs exited with code {result.ExitCode}: " +
+                $"{error.Trim()}");
         }
 
         if (!File.Exists(expectedOutputPath))
@@ -151,14 +203,33 @@ public class Ps3DecService
             return (
                 false,
                 string.Empty,
-                $"Decryption completed but expected output was not found: {expectedOutputPath}");
+                $"Decryption completed but expected output was not found: " +
+                $"{expectedOutputPath}");
         }
 
-        progress?.Report(100);
+        progress?.Report(
+            100);
 
         return (
             true,
             expectedOutputPath,
             string.Empty);
+    }
+
+    private static void DeletePartialOutput(
+        string outputPath)
+    {
+        try
+        {
+            if (File.Exists(outputPath))
+            {
+                File.Delete(
+                    outputPath);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup only.
+        }
     }
 }
