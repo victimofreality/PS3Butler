@@ -23,6 +23,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly Window _window;
     private readonly KeyIndexService _keyIndexService;
     private readonly MetadataCacheService _metadataCacheService;
+    private CancellationTokenSource? _pipelineCancellationTokenSource;
     private CancellationTokenSource? _downloadCancellationTokenSource;
     private PauseTokenSource? _downloadPauseTokenSource;
 
@@ -288,12 +289,20 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ProcessReadyJobs()
     {
-        /*
-         * Preflight everything we can before starting.
-         *
-         * Local jobs can become Ready immediately. URL jobs that have not
-         * downloaded yet remain Waiting until their download completes.
-         */
+        _pipelineCancellationTokenSource?.Dispose();
+
+        _pipelineCancellationTokenSource =
+            new CancellationTokenSource();
+
+        var pipelineCancellationToken =
+            _pipelineCancellationTokenSource.Token;
+
+            /*
+             * Preflight everything we can before starting.
+             *
+             * Local jobs can become Ready immediately. URL jobs that have not
+             * downloaded yet remain Waiting until their download completes.
+             */
         await PreflightQueue();
 
         var queuedJobs =
@@ -305,13 +314,24 @@ public partial class MainViewModel : ViewModelBase
         using var processingGate =
             new SemaphoreSlim(1, 1);
 
-        async Task ProcessQueuedJobAsync(GameJob queuedJob)
+        async Task ProcessQueuedJobAsync(
+            GameJob queuedJob)
         {
             await processingGate.WaitAsync();
 
             try
             {
-                await ProcessSingleJobAsync(queuedJob);
+                if (pipelineCancellationToken.IsCancellationRequested)
+                {
+                    queuedJob.Status = "Error";
+                    queuedJob.CurrentStage = "Cancelled";
+                    queuedJob.Details = "Processing cancelled.";
+                    return;
+                }
+
+                await ProcessSingleJobAsync(
+                    queuedJob,
+                    pipelineCancellationToken);
             }
             finally
             {
@@ -327,6 +347,10 @@ public partial class MainViewModel : ViewModelBase
          */
         foreach (var job in queuedJobs)
         {
+            if (pipelineCancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
             if (job.Status == "Ready")
             {
                 processingTasks.Add(
@@ -395,7 +419,8 @@ public partial class MainViewModel : ViewModelBase
             _downloadCancellationTokenSource?.Dispose();
 
             _downloadCancellationTokenSource =
-                new CancellationTokenSource();
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    pipelineCancellationToken);
 
             _downloadPauseTokenSource =
                 new PauseTokenSource();
@@ -489,9 +514,16 @@ public partial class MainViewModel : ViewModelBase
         _downloadCancellationTokenSource?.Dispose();
         _downloadCancellationTokenSource = null;
         _downloadPauseTokenSource = null;
+
+        _pipelineCancellationTokenSource?.Dispose();
+        _pipelineCancellationTokenSource = null;
+
     }
 
-    private async Task ProcessSingleJobAsync(GameJob job)
+    private async Task ProcessSingleJobAsync(
+        GameJob job,
+        CancellationToken cancellationToken)
+
     {
         var options = new JobExecutionOptions
         {
@@ -509,7 +541,10 @@ public partial class MainViewModel : ViewModelBase
                 _metadataCacheService,
                 options);
 
-        await jobExecutionService.ProcessAsync(job);
+        await jobExecutionService.ProcessAsync(
+            job,
+            cancellationToken);
+
     }
 
 
@@ -748,6 +783,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void CancelDownload()
     {
+        _pipelineCancellationTokenSource?.Cancel();
         _downloadCancellationTokenSource?.Cancel();
     }
 

@@ -3,6 +3,7 @@ using PS3Butler.Services;
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services.Pipeline;
@@ -20,8 +21,12 @@ public sealed class JobExecutionService
         _options = options;
     }
 
-    public async Task ProcessAsync(GameJob job)
+    public async Task ProcessAsync(
+     GameJob job,
+     CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var ps3DecService =
             new Ps3DecService(
                 _options.RedrrxPs3DecPath,
@@ -113,7 +118,8 @@ public sealed class JobExecutionService
                 await archiveExtractionService.ExtractIsoAsync(
                     sourcePath,
                     temporaryExtractionDirectory,
-                    extractionProgress);
+                    extractionProgress,
+                    cancellationToken);
 
             if (!extractionResult.Success)
             {
@@ -264,7 +270,8 @@ public sealed class JobExecutionService
                 inputIsoPath,
                 job.DiscKey,
                 _options.WorkDirectory,
-                decryptProgress);
+                decryptProgress,
+                cancellationToken);
 
         if (!decryptResult.Success)
         {
@@ -278,7 +285,8 @@ public sealed class JobExecutionService
         var metadata =
             await decryptedIsoMetadataService.ReadMetadataAsync(
                 decryptResult.OutputPath,
-                _options.WorkDirectory);
+                _options.WorkDirectory,
+                cancellationToken);
 
         if (metadata is not null &&
             !string.IsNullOrWhiteSpace(metadata.TitleId))
@@ -401,7 +409,8 @@ public sealed class JobExecutionService
                 await jbExtractionService.ExtractAsync(
                     decryptResult.OutputPath,
                     temporaryJbDirectory,
-                    jbProgress);
+                    jbProgress,
+                    cancellationToken);
 
             if (!jbExtractionResult.Success)
             {
