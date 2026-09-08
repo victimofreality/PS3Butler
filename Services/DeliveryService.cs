@@ -2,6 +2,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
@@ -12,7 +13,8 @@ public class DeliveryService
         string sourcePath,
         string destinationDirectory,
         IProgress<TransferProgress>? progress = null,
-        string? destinationFileName = null)
+        string? destinationFileName = null,
+        CancellationToken cancellationToken = default)
     {
         if (!File.Exists(sourcePath))
         {
@@ -30,7 +32,10 @@ public class DeliveryService
                 "Destination directory is not configured.");
         }
 
-        Directory.CreateDirectory(destinationDirectory);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Directory.CreateDirectory(
+            destinationDirectory);
 
         var destinationPath =
             Path.Combine(
@@ -41,30 +46,37 @@ public class DeliveryService
 
         try
         {
-            var sourceInfo = new FileInfo(sourcePath);
-            var totalBytes = sourceInfo.Length;
+            var sourceInfo =
+                new FileInfo(sourcePath);
+
+            var totalBytes =
+                sourceInfo.Length;
 
             long copiedBytes = 0;
 
-            var buffer = new byte[1024 * 1024];
+            var buffer =
+                new byte[1024 * 1024];
 
-            var stopwatch = Stopwatch.StartNew();
+            var stopwatch =
+                Stopwatch.StartNew();
 
-            await using var sourceStream = new FileStream(
-                sourcePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                buffer.Length,
-                useAsync: true);
+            await using var sourceStream =
+                new FileStream(
+                    sourcePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    buffer.Length,
+                    useAsync: true);
 
-            await using var destinationStream = new FileStream(
-                destinationPath,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.None,
-                buffer.Length,
-                useAsync: true);
+            await using var destinationStream =
+                new FileStream(
+                    destinationPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    buffer.Length,
+                    useAsync: true);
 
             int bytesRead;
 
@@ -72,19 +84,23 @@ public class DeliveryService
                     await sourceStream.ReadAsync(
                         buffer.AsMemory(
                             0,
-                            buffer.Length))) > 0)
+                            buffer.Length),
+                        cancellationToken)) > 0)
             {
                 await destinationStream.WriteAsync(
                     buffer.AsMemory(
                         0,
-                        bytesRead));
+                        bytesRead),
+                    cancellationToken);
 
-                copiedBytes += bytesRead;
+                copiedBytes +=
+                    bytesRead;
 
                 if (totalBytes > 0)
                 {
                     var percentage =
-                        copiedBytes * 100.0 /
+                        copiedBytes *
+                        100.0 /
                         totalBytes;
 
                     var elapsedSeconds =
@@ -105,7 +121,8 @@ public class DeliveryService
                     if (bytesPerSecond > 0)
                     {
                         var remainingBytes =
-                            totalBytes - copiedBytes;
+                            totalBytes -
+                            copiedBytes;
 
                         estimatedRemaining =
                             TimeSpan.FromSeconds(
@@ -116,18 +133,29 @@ public class DeliveryService
                     progress?.Report(
                         new TransferProgress
                         {
-                            Percentage = percentage,
+                            Percentage =
+                                percentage,
+
                             MegabytesPerSecond =
                                 megabytesPerSecond,
+
                             EstimatedRemaining =
                                 estimatedRemaining
                         });
                 }
             }
 
-            await destinationStream.FlushAsync();
+            await destinationStream.FlushAsync(
+                cancellationToken);
 
             stopwatch.Stop();
+        }
+        catch (OperationCanceledException)
+        {
+            return (
+                false,
+                string.Empty,
+                "Copy cancelled.");
         }
         catch (Exception ex)
         {

@@ -1,9 +1,9 @@
 ﻿using PS3Butler.Models;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
@@ -13,7 +13,8 @@ public class FolderDeliveryService
     public async Task<(bool Success, string DestinationPath, string Error)> CopyAsync(
         string sourceDirectory,
         string destinationDirectory,
-        IProgress<TransferProgress>? progress = null)
+        IProgress<TransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(sourceDirectory))
         {
@@ -25,6 +26,8 @@ public class FolderDeliveryService
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var files =
                 Directory
                     .EnumerateFiles(
@@ -34,17 +37,22 @@ public class FolderDeliveryService
                     .ToList();
 
             var totalBytes =
-                files.Sum(path => new FileInfo(path).Length);
+                files.Sum(
+                    path =>
+                        new FileInfo(path).Length);
 
             long copiedBytes = 0;
 
-            Directory.CreateDirectory(destinationDirectory);
+            Directory.CreateDirectory(
+                destinationDirectory);
 
             var stopwatch =
                 Stopwatch.StartNew();
 
             foreach (var sourceFile in files)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var relativePath =
                     Path.GetRelativePath(
                         sourceDirectory,
@@ -56,15 +64,21 @@ public class FolderDeliveryService
                         relativePath);
 
                 var parentDirectory =
-                    Path.GetDirectoryName(destinationFile);
+                    Path.GetDirectoryName(
+                        destinationFile);
 
-                if (!string.IsNullOrWhiteSpace(parentDirectory))
+                if (!string.IsNullOrWhiteSpace(
+                        parentDirectory))
                 {
-                    Directory.CreateDirectory(parentDirectory);
+                    Directory.CreateDirectory(
+                        parentDirectory);
                 }
 
-                const int bufferSize = 1024 * 1024;
-                var buffer = new byte[bufferSize];
+                const int bufferSize =
+                    1024 * 1024;
+
+                var buffer =
+                    new byte[bufferSize];
 
                 await using var sourceStream =
                     new FileStream(
@@ -90,14 +104,17 @@ public class FolderDeliveryService
                         await sourceStream.ReadAsync(
                             buffer.AsMemory(
                                 0,
-                                buffer.Length))) > 0)
+                                buffer.Length),
+                            cancellationToken)) > 0)
                 {
                     await destinationStream.WriteAsync(
                         buffer.AsMemory(
                             0,
-                            bytesRead));
+                            bytesRead),
+                        cancellationToken);
 
-                    copiedBytes += bytesRead;
+                    copiedBytes +=
+                        bytesRead;
 
                     var elapsedSeconds =
                         stopwatch.Elapsed.TotalSeconds;
@@ -109,7 +126,9 @@ public class FolderDeliveryService
 
                     var percentage =
                         totalBytes > 0
-                            ? copiedBytes * 100.0 / totalBytes
+                            ? copiedBytes *
+                              100.0 /
+                              totalBytes
                             : 100;
 
                     TimeSpan? remaining =
@@ -126,25 +145,41 @@ public class FolderDeliveryService
                     progress?.Report(
                         new TransferProgress
                         {
-                            Percentage = percentage,
+                            Percentage =
+                                percentage,
+
                             MegabytesPerSecond =
-                                bytesPerSecond / (1024 * 1024),
-                            EstimatedRemaining = remaining
+                                bytesPerSecond /
+                                (1024 * 1024),
+
+                            EstimatedRemaining =
+                                remaining
                         });
                 }
+
+                await destinationStream.FlushAsync(
+                    cancellationToken);
             }
 
             progress?.Report(
                 new TransferProgress
                 {
                     Percentage = 100,
-                    EstimatedRemaining = TimeSpan.Zero
+                    EstimatedRemaining =
+                        TimeSpan.Zero
                 });
 
             return (
                 true,
                 destinationDirectory,
                 string.Empty);
+        }
+        catch (OperationCanceledException)
+        {
+            return (
+                false,
+                string.Empty,
+                "Folder copy cancelled.");
         }
         catch (Exception ex)
         {

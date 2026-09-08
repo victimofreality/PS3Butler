@@ -180,7 +180,8 @@ public sealed class JobExecutionService
                     inputIsoPath,
                     destinationPath,
                     copyProgress,
-                    finalIsoFileName);
+                    finalIsoFileName,
+                    cancellationToken);
 
             if (!deliveryResult.Success)
             {
@@ -198,7 +199,8 @@ public sealed class JobExecutionService
 
             await File.WriteAllTextAsync(
                 destinationKeyPath,
-                job.DiscKey);
+                job.DiscKey,
+                cancellationToken);
 
             job.OutputPath =
                 deliveryResult.DestinationPath;
@@ -352,7 +354,8 @@ public sealed class JobExecutionService
                     decryptResult.OutputPath,
                     destinationPath,
                     copyProgress,
-                    finalIsoFileName);
+                    finalIsoFileName,
+                    cancellationToken);
 
             if (!deliveryResult.Success)
             {
@@ -479,7 +482,8 @@ public sealed class JobExecutionService
                 await folderDeliveryService.CopyAsync(
                     temporaryJbDirectory,
                     finalJbDestination,
-                    folderCopyProgress);
+                    folderCopyProgress,
+                    cancellationToken);
 
             if (!folderDeliveryResult.Success)
             {
