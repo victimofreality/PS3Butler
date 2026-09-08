@@ -1,7 +1,8 @@
 ﻿using PS3Butler.Models;
+using PS3Butler.Services.Execution;
 using System;
-using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
@@ -9,16 +10,32 @@ namespace PS3Butler.Services;
 public class DecryptedIsoMetadataService
 {
     private readonly string _sevenZipPath;
-    private readonly ParamSfoService _paramSfoService = new();
+    private readonly ParamSfoService _paramSfoService;
+    private readonly IProcessRunner _processRunner;
 
-    public DecryptedIsoMetadataService(string sevenZipPath)
+    public DecryptedIsoMetadataService(
+        string sevenZipPath)
+        : this(
+            sevenZipPath,
+            new ProcessRunner(),
+            new ParamSfoService())
+    {
+    }
+
+    public DecryptedIsoMetadataService(
+        string sevenZipPath,
+        IProcessRunner processRunner,
+        ParamSfoService paramSfoService)
     {
         _sevenZipPath = sevenZipPath;
+        _processRunner = processRunner;
+        _paramSfoService = paramSfoService;
     }
 
     public async Task<Ps3GameMetadata?> ReadMetadataAsync(
         string decryptedIsoPath,
-        string workDirectory)
+        string workDirectory,
+        CancellationToken cancellationToken = default)
     {
         if (!File.Exists(_sevenZipPath))
         {
@@ -36,43 +53,46 @@ public class DecryptedIsoMetadataService
                 "metadata",
                 Guid.NewGuid().ToString("N"));
 
-        Directory.CreateDirectory(tempDirectory);
+        Directory.CreateDirectory(
+            tempDirectory);
 
         try
         {
-            var startInfo = new ProcessStartInfo
+            var request =
+                new ProcessRunRequest
+                {
+                    FileName =
+                        _sevenZipPath,
+
+                    Arguments =
+                        $"e -y " +
+                        $"-o\"{tempDirectory}\" " +
+                        $"\"{decryptedIsoPath}\" " +
+                        "\"PS3_GAME\\PARAM.SFO\"",
+
+                    Timeout =
+                        TimeSpan.FromSeconds(30)
+                };
+
+            var result =
+                await _processRunner.RunAsync(
+                    request,
+                    cancellationToken);
+
+            if (result.WasCancelled ||
+                result.TimedOut)
             {
-                FileName = _sevenZipPath,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
+                return null;
+            }
 
-            startInfo.ArgumentList.Add("e");
-            startInfo.ArgumentList.Add("-y");
-            startInfo.ArgumentList.Add($"-o{tempDirectory}");
-            startInfo.ArgumentList.Add(decryptedIsoPath);
-            startInfo.ArgumentList.Add(@"PS3_GAME\PARAM.SFO");
-
-            using var process = new Process
-            {
-                StartInfo = startInfo
-            };
-
-            process.Start();
-
-            var stdoutTask =
-                process.StandardOutput.ReadToEndAsync();
-
-            var stderrTask =
-                process.StandardError.ReadToEndAsync();
-
-            await process.WaitForExitAsync();
-
-            await stdoutTask;
-            await stderrTask;
-
+            /*
+             * Decrypted PS3 ISOs can make 7-Zip report a
+             * Headers Error even when PARAM.SFO was actually
+             * extracted successfully.
+             *
+             * For metadata extraction, the authoritative check
+             * is whether PARAM.SFO exists and parses.
+             */
             var paramSfoPath =
                 Path.Combine(
                     tempDirectory,
@@ -83,13 +103,15 @@ public class DecryptedIsoMetadataService
                 return null;
             }
 
-            return _paramSfoService.Read(paramSfoPath);
+            return _paramSfoService.Read(
+                paramSfoPath);
         }
         finally
         {
             try
             {
-                if (Directory.Exists(tempDirectory))
+                if (Directory.Exists(
+                        tempDirectory))
                 {
                     Directory.Delete(
                         tempDirectory,
