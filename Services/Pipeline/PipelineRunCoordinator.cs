@@ -115,7 +115,7 @@ public sealed class PipelineRunCoordinator
                     break;
                 }
 
-                if (job.Status == "Ready")
+                if (job.State == JobState.Ready)
                 {
                     processingTasks.Add(
                         ProcessQueuedJobAsync(
@@ -143,8 +143,8 @@ public sealed class PipelineRunCoordinator
                 }
 
                 if (job.SourceType != GameSourceType.Url ||
-                    job.Status == "Complete" ||
-                    job.Status == "Already exists")
+                    job.State == JobState.Complete ||
+                    job.State == JobState.AlreadyExists)
                 {
                     continue;
                 }
@@ -166,8 +166,8 @@ public sealed class PipelineRunCoordinator
                 _downloadPauseTokenSource =
                     new PauseTokenSource();
 
-                job.Status = "Downloading";
-                job.CurrentStage = "Downloading";
+                job.State = JobState.Running;
+                job.Stage = JobStage.Downloading;
                 job.Progress = 0;
                 job.TransferSpeedMbps = 0;
                 job.EtaText = string.Empty;
@@ -221,8 +221,8 @@ public sealed class PipelineRunCoordinator
                         downloadDirectory,
                         runSettings.WorkDirectory);
 
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         downloadResult.Error;
 
@@ -232,8 +232,8 @@ public sealed class PipelineRunCoordinator
                 job.LocalSourcePath =
                     downloadResult.OutputPath;
 
-                job.Status = "Waiting";
-                job.CurrentStage = string.Empty;
+                job.State = JobState.Waiting;
+                job.Stage = JobStage.None;
                 job.Progress = 0;
                 job.TransferSpeedMbps = 0;
                 job.EtaText = string.Empty;
@@ -243,7 +243,7 @@ public sealed class PipelineRunCoordinator
                 await preflightService.PreflightAsync(
                     job);
 
-                if (job.Status == "Ready")
+                if (job.State == JobState.Ready)
                 {
                     processingTasks.Add(
                         ProcessQueuedJobAsync(
@@ -342,7 +342,8 @@ public sealed class PipelineRunCoordinator
     private static void MarkCancelled(
         GameJob job)
     {
-        job.Status = "Error";
+        job.State = JobState.Error;
+        job.Stage = JobStage.Error;
         job.CurrentStage = "Cancelled";
         job.Details =
             "Processing cancelled.";
