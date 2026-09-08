@@ -909,6 +909,7 @@ public sealed class JobExecutionService
                     $"JB folder copied to: {job.OutputPath}";
             }
         }
+
         finally
         {
             TryDeleteFile(
@@ -919,7 +920,21 @@ public sealed class JobExecutionService
 
             TryDeleteDirectory(
                 temporaryJbDirectory);
+
+            if (job.SourceType ==
+                    GameSourceType.Url &&
+                !string.IsNullOrWhiteSpace(
+                    job.LocalSourcePath))
+            {
+                TemporaryDownloadCleanupService.CleanupFile(
+                    job.LocalSourcePath,
+                    _options.WorkDirectory);
+
+                job.LocalSourcePath =
+                    null;
+            }
         }
+
     }
 
     private static long GetDirectorySize(

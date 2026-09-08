@@ -495,6 +495,10 @@ public partial class MainViewModel : ViewModelBase
 
             if (!downloadResult.Success)
             {
+                TemporaryDownloadCleanupService.CleanupDirectory(
+                    downloadDirectory,
+                    WorkDirectory);
+
                 job.Status = "Error";
                 job.CurrentStage = "Error";
                 job.Details =
@@ -521,6 +525,15 @@ public partial class MainViewModel : ViewModelBase
                 processingTasks.Add(
                     ProcessQueuedJobAsync(job));
             }
+            else
+            {
+                TemporaryDownloadCleanupService.CleanupFile(
+                    job.LocalSourcePath,
+                    WorkDirectory);
+
+                job.LocalSourcePath = null;
+            }
+
         }
 
         /*
