@@ -44,6 +44,18 @@ public class DeliveryService
                     ? Path.GetFileName(sourcePath)
                     : destinationFileName);
 
+        if (File.Exists(destinationPath))
+        {
+            return (
+                false,
+                string.Empty,
+                $"Destination file already exists: {destinationPath}");
+        }
+
+        var stagingPath =
+            destinationPath +
+            $".ps3butler-{Guid.NewGuid():N}.partial";
+
         try
         {
             var sourceInfo =
@@ -60,98 +72,170 @@ public class DeliveryService
             var stopwatch =
                 Stopwatch.StartNew();
 
-            await using var sourceStream =
-                new FileStream(
-                    sourcePath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.Read,
-                    buffer.Length,
-                    useAsync: true);
+            var lastProgressReport =
+                TimeSpan.Zero;
 
-            await using var destinationStream =
-                new FileStream(
-                    destinationPath,
-                    FileMode.Create,
-                    FileAccess.Write,
-                    FileShare.None,
-                    buffer.Length,
-                    useAsync: true);
-
-            int bytesRead;
-
-            while ((bytesRead =
-                    await sourceStream.ReadAsync(
-                        buffer.AsMemory(
-                            0,
-                            buffer.Length),
-                        cancellationToken)) > 0)
+            await using (
+                var sourceStream =
+                    new FileStream(
+                        sourcePath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read,
+                        buffer.Length,
+                        useAsync: true))
+            await using (
+                var stagingStream =
+                    new FileStream(
+                        stagingPath,
+                        FileMode.CreateNew,
+                        FileAccess.Write,
+                        FileShare.None,
+                        buffer.Length,
+                        useAsync: true))
             {
-                await destinationStream.WriteAsync(
-                    buffer.AsMemory(
-                        0,
-                        bytesRead),
-                    cancellationToken);
+                int bytesRead;
 
-                copiedBytes +=
-                    bytesRead;
+                while ((bytesRead =
+                        await sourceStream.ReadAsync(
+                            buffer.AsMemory(
+                                0,
+                                buffer.Length),
+                            cancellationToken)
+                        .ConfigureAwait(false)) > 0)
 
-                if (totalBytes > 0)
                 {
-                    var percentage =
-                        copiedBytes *
-                        100.0 /
-                        totalBytes;
+                    await stagingStream.WriteAsync(
+                            buffer.AsMemory(
+                                0,
+                                bytesRead),
+                            cancellationToken)
+                        .ConfigureAwait(false);
 
-                    var elapsedSeconds =
-                        stopwatch.Elapsed.TotalSeconds;
+                    copiedBytes +=
+                        bytesRead;
 
-                    var bytesPerSecond =
-                        elapsedSeconds > 0
-                            ? copiedBytes / elapsedSeconds
-                            : 0;
-
-                    var megabytesPerSecond =
-                        bytesPerSecond /
-                        (1024 * 1024);
-
-                    TimeSpan? estimatedRemaining =
-                        null;
-
-                    if (bytesPerSecond > 0)
+                    if (totalBytes > 0)
                     {
-                        var remainingBytes =
-                            totalBytes -
-                            copiedBytes;
+                        var percentage =
+                            copiedBytes *
+                            100.0 /
+                            totalBytes;
 
-                        estimatedRemaining =
-                            TimeSpan.FromSeconds(
-                                remainingBytes /
-                                bytesPerSecond);
-                    }
+                        var elapsedSeconds =
+                            stopwatch.Elapsed.TotalSeconds;
 
-                    progress?.Report(
-                        new TransferProgress
+                        var bytesPerSecond =
+                            elapsedSeconds > 0
+                                ? copiedBytes / elapsedSeconds
+                                : 0;
+
+                        var megabytesPerSecond =
+                            bytesPerSecond /
+                            (1024 * 1024);
+
+                        TimeSpan? estimatedRemaining =
+                            null;
+
+                        if (bytesPerSecond > 0)
                         {
-                            Percentage =
-                                percentage,
+                            var remainingBytes =
+                                totalBytes -
+                                copiedBytes;
 
-                            MegabytesPerSecond =
-                                megabytesPerSecond,
+                            estimatedRemaining =
+                                TimeSpan.FromSeconds(
+                                    remainingBytes /
+                                    bytesPerSecond);
+                        }
 
-                            EstimatedRemaining =
-                                estimatedRemaining
-                        });
+                        if (stopwatch.Elapsed - lastProgressReport >=
+                            TimeSpan.FromMilliseconds(250))
+                        {
+                            progress?.Report(
+                                new TransferProgress
+                                {
+                                    Percentage =
+                                        percentage,
+
+                                    MegabytesPerSecond =
+                                        megabytesPerSecond,
+
+                                    EstimatedRemaining =
+                                        estimatedRemaining
+                                });
+
+                            lastProgressReport =
+                                stopwatch.Elapsed;
+                        }
+
+                    }
                 }
+
+                await stagingStream.FlushAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
             }
 
-            await destinationStream.FlushAsync(
-                cancellationToken);
-
             stopwatch.Stop();
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var stagingInfo =
+                new FileInfo(stagingPath);
+
+            if (!stagingInfo.Exists)
+            {
+                return (
+                    false,
+                    string.Empty,
+                    "Staged destination file was not created.");
+            }
+
+            if (sourceInfo.Length !=
+                stagingInfo.Length)
+            {
+                return (
+                    false,
+                    string.Empty,
+                    "Staged destination file size does not match source.");
+            }
+
+            /*
+             * File.Move without overwrite is the publish operation.
+             *
+             * The staging file is on the same destination filesystem,
+             * so this should be a rename rather than another full copy.
+             *
+             * If another process creates the final filename between our
+             * earlier check and this point, publishing fails rather than
+             * overwriting it.
+             */
+            File.Move(
+                stagingPath,
+                destinationPath,
+                overwrite: false);
+
+            progress?.Report(
+                new TransferProgress
+                {
+                    Percentage = 100,
+                    MegabytesPerSecond = 0,
+                    EstimatedRemaining =
+                        TimeSpan.Zero
+                });
+
+            return (
+                true,
+                destinationPath,
+                string.Empty);
         }
         catch (OperationCanceledException)
         {
+            TryDeleteFile(
+                stagingPath);
+
             return (
                 false,
                 string.Empty,
@@ -159,47 +243,38 @@ public class DeliveryService
         }
         catch (Exception ex)
         {
+            TryDeleteFile(
+                stagingPath);
+
             return (
                 false,
                 string.Empty,
                 $"Copy failed: {ex.Message}");
         }
-
-        var finalSourceInfo =
-            new FileInfo(sourcePath);
-
-        var destinationInfo =
-            new FileInfo(destinationPath);
-
-        if (!destinationInfo.Exists)
+        finally
         {
-            return (
-                false,
-                string.Empty,
-                "Destination file was not created.");
+            /*
+             * Harmless after a successful File.Move because stagingPath
+             * no longer exists. On any failed path this removes leftovers.
+             */
+            TryDeleteFile(
+                stagingPath);
         }
+    }
 
-        if (finalSourceInfo.Length !=
-            destinationInfo.Length)
+    private static void TryDeleteFile(
+        string path)
+    {
+        try
         {
-            return (
-                false,
-                string.Empty,
-                "Destination file size does not match source.");
-        }
-
-        progress?.Report(
-            new TransferProgress
+            if (File.Exists(path))
             {
-                Percentage = 100,
-                MegabytesPerSecond = 0,
-                EstimatedRemaining =
-                    TimeSpan.Zero
-            });
-
-        return (
-            true,
-            destinationPath,
-            string.Empty);
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort staging cleanup only.
+        }
     }
 }

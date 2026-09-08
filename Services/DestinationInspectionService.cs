@@ -148,6 +148,25 @@ public class DestinationInspectionService
         return existingIso;
     }
 
+    public string? FindExistingIsoOnly(
+    string destinationDirectory,
+    string gameName)
+    {
+        if (string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            return null;
+        }
+
+        if (!Directory.Exists(destinationDirectory))
+        {
+            return null;
+        }
+
+        return FindExistingIso(
+            destinationDirectory,
+            gameName);
+    }
+
     private static string? FindExistingIso(
         string destinationDirectory,
         string gameName)

@@ -24,6 +24,18 @@ public class FolderDeliveryService
                 "Source directory does not exist.");
         }
 
+        if (Directory.Exists(destinationDirectory))
+        {
+            return (
+                false,
+                string.Empty,
+                $"Destination folder already exists: {destinationDirectory}");
+        }
+
+        var stagingDirectory =
+            destinationDirectory +
+            $".ps3butler-{Guid.NewGuid():N}.partial";
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -44,10 +56,13 @@ public class FolderDeliveryService
             long copiedBytes = 0;
 
             Directory.CreateDirectory(
-                destinationDirectory);
+                stagingDirectory);
 
             var stopwatch =
                 Stopwatch.StartNew();
+
+            var lastProgressReport =
+                TimeSpan.Zero;
 
             foreach (var sourceFile in files)
             {
@@ -58,14 +73,14 @@ public class FolderDeliveryService
                         sourceDirectory,
                         sourceFile);
 
-                var destinationFile =
+                var stagingFile =
                     Path.Combine(
-                        destinationDirectory,
+                        stagingDirectory,
                         relativePath);
 
                 var parentDirectory =
                     Path.GetDirectoryName(
-                        destinationFile);
+                        stagingFile);
 
                 if (!string.IsNullOrWhiteSpace(
                         parentDirectory))
@@ -89,10 +104,10 @@ public class FolderDeliveryService
                         bufferSize,
                         useAsync: true);
 
-                await using var destinationStream =
+                await using var stagingStream =
                     new FileStream(
-                        destinationFile,
-                        FileMode.Create,
+                        stagingFile,
+                        FileMode.CreateNew,
                         FileAccess.Write,
                         FileShare.None,
                         bufferSize,
@@ -102,16 +117,19 @@ public class FolderDeliveryService
 
                 while ((bytesRead =
                         await sourceStream.ReadAsync(
+                                buffer.AsMemory(
+                                    0,
+                                    buffer.Length),
+                                cancellationToken)
+                            .ConfigureAwait(false)) > 0)
+                {
+
+                    await stagingStream.WriteAsync(
                             buffer.AsMemory(
                                 0,
-                                buffer.Length),
-                            cancellationToken)) > 0)
-                {
-                    await destinationStream.WriteAsync(
-                        buffer.AsMemory(
-                            0,
-                            bytesRead),
-                        cancellationToken);
+                                bytesRead),
+                            cancellationToken)
+                        .ConfigureAwait(false);
 
                     copiedBytes +=
                         bytesRead;
@@ -142,24 +160,76 @@ public class FolderDeliveryService
                                 bytesPerSecond);
                     }
 
-                    progress?.Report(
-                        new TransferProgress
-                        {
-                            Percentage =
-                                percentage,
+                    if (stopwatch.Elapsed - lastProgressReport >=
+                        TimeSpan.FromMilliseconds(250))
+                    {
+                        progress?.Report(
+                            new TransferProgress
+                            {
+                                Percentage =
+                                    percentage,
 
-                            MegabytesPerSecond =
-                                bytesPerSecond /
-                                (1024 * 1024),
+                                MegabytesPerSecond =
+                                    bytesPerSecond /
+                                    (1024 * 1024),
 
-                            EstimatedRemaining =
-                                remaining
-                        });
+                                EstimatedRemaining =
+                                    remaining
+                            });
+
+                        lastProgressReport =
+                            stopwatch.Elapsed;
+                    }
                 }
 
-                await destinationStream.FlushAsync(
-                    cancellationToken);
+                await stagingStream.FlushAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            /*
+             * Validate the staged tree before publishing it.
+             */
+            var stagedFiles =
+                Directory
+                    .EnumerateFiles(
+                        stagingDirectory,
+                        "*",
+                        SearchOption.AllDirectories)
+                    .ToList();
+
+            if (stagedFiles.Count != files.Count)
+            {
+                return (
+                    false,
+                    string.Empty,
+                    "Staged JB folder file count does not match source.");
+            }
+
+            var stagedBytes =
+                stagedFiles.Sum(
+                    path =>
+                        new FileInfo(path).Length);
+
+            if (stagedBytes != totalBytes)
+            {
+                return (
+                    false,
+                    string.Empty,
+                    "Staged JB folder size does not match source.");
+            }
+
+            /*
+             * Same-filesystem rename publishes the complete folder.
+             * Directory.Move will fail rather than merge with an
+             * existing destination.
+             */
+            Directory.Move(
+                stagingDirectory,
+                destinationDirectory);
 
             progress?.Report(
                 new TransferProgress
@@ -176,6 +246,9 @@ public class FolderDeliveryService
         }
         catch (OperationCanceledException)
         {
+            TryDeleteDirectory(
+                stagingDirectory);
+
             return (
                 false,
                 string.Empty,
@@ -183,10 +256,36 @@ public class FolderDeliveryService
         }
         catch (Exception ex)
         {
+            TryDeleteDirectory(
+                stagingDirectory);
+
             return (
                 false,
                 string.Empty,
                 $"Folder copy failed: {ex.Message}");
+        }
+        finally
+        {
+            TryDeleteDirectory(
+                stagingDirectory);
+        }
+    }
+
+    private static void TryDeleteDirectory(
+        string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(
+                    path,
+                    recursive: true);
+            }
+        }
+        catch
+        {
+            // Best-effort staging cleanup only.
         }
     }
 }

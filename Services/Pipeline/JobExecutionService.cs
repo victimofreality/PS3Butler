@@ -80,11 +80,14 @@ public sealed class JobExecutionService
         string inputIsoPath;
         string? temporaryExtractionDirectory = null;
         string? temporaryJbDirectory = null;
+        string? decryptedIsoPath = null;
 
-        var sourcePath =
-            job.EffectiveSourcePath;
-
-        var extension =
+        try
+        {
+            var sourcePath =
+                job.EffectiveSourcePath;
+            
+            var extension =
             Path.GetExtension(sourcePath);
 
         if (extension.Equals(
@@ -133,129 +136,302 @@ public sealed class JobExecutionService
             inputIsoPath =
                 extractionResult.IsoPath;
         }
-        if (job.OutputFormat ==
-            OutputFormat.EncryptedIsoWithKey)
-        {
-            job.Status = "Copying";
-            job.CurrentStage = "Copying encrypted ISO";
-            job.Progress = 0;
-            job.TransferSpeedMbps = 0;
-            job.EtaText = string.Empty;
-            job.Details =
-                "Copying encrypted ISO and disc key to destination...";
-
-            var finalIsoFileName =
-                job.DetectedIsoName ??
-                Path.GetFileName(inputIsoPath);
-
-            var copyProgress =
-                new Progress<TransferProgress>(value =>
-                {
-                    job.Progress =
-                        value.Percentage;
-
-                    job.TransferSpeedMbps =
-                        value.MegabytesPerSecond;
-
-                    if (value.EstimatedRemaining.HasValue)
-                    {
-                        var eta =
-                            value.EstimatedRemaining.Value;
-
-                        job.EtaText =
-                            $"Copying — " +
-                            $"{value.MegabytesPerSecond:F1} MB/s — " +
-                            $"{eta:hh\\:mm\\:ss} remaining";
-                    }
-                    else
-                    {
-                        job.EtaText =
-                            $"Copying — " +
-                            $"{value.MegabytesPerSecond:F1} MB/s";
-                    }
-                });
-
-            var deliveryResult =
-                await deliveryService.CopyAsync(
-                    inputIsoPath,
-                    destinationPath,
-                    copyProgress,
-                    finalIsoFileName,
-                    cancellationToken);
-
-            if (!deliveryResult.Success)
+            if (job.OutputFormat ==
+                OutputFormat.EncryptedIsoWithKey)
             {
-                job.Status = "Error";
-                job.CurrentStage = "Error";
+                job.Status = "Copying";
+                job.CurrentStage = "Copying encrypted ISO";
+                job.Progress = 0;
+                job.TransferSpeedMbps = 0;
+                job.EtaText = string.Empty;
                 job.Details =
-                    deliveryResult.Error;
-                return;
-            }
+                    "Copying encrypted ISO and disc key to destination...";
 
-            var destinationKeyPath =
-                Path.ChangeExtension(
-                    deliveryResult.DestinationPath,
-                    ".dkey");
+                var finalIsoFileName =
+                    job.DetectedIsoName ??
+                    Path.GetFileName(inputIsoPath);
 
-            await File.WriteAllTextAsync(
-                destinationKeyPath,
-                job.DiscKey,
-                cancellationToken);
+                var finalIsoPath =
+                    Path.Combine(
+                        destinationPath,
+                        finalIsoFileName);
 
-            job.OutputPath =
-                deliveryResult.DestinationPath;
+                var finalKeyPath =
+                    Path.ChangeExtension(
+                        finalIsoPath,
+                        ".dkey");
 
-            try
-            {
-                if (temporaryExtractionDirectory is not null &&
-                    Directory.Exists(
-                        temporaryExtractionDirectory))
+                if (File.Exists(finalIsoPath))
                 {
-                    Directory.Delete(
-                        temporaryExtractionDirectory,
-                        recursive: true);
+                    job.Status = "Error";
+                    job.CurrentStage = "Error";
+                    job.Details =
+                        $"Destination ISO already exists: {finalIsoPath}";
+                    return;
                 }
 
-                if (job.SourceType == GameSourceType.Url &&
-                    !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
-                    File.Exists(job.LocalSourcePath))
+                if (File.Exists(finalKeyPath))
                 {
-                    var downloadDirectory =
-                        Path.GetDirectoryName(job.LocalSourcePath);
+                    job.Status = "Error";
+                    job.CurrentStage = "Error";
+                    job.Details =
+                        $"Destination key already exists: {finalKeyPath}";
+                    return;
+                }
 
-                    File.Delete(job.LocalSourcePath);
+                var transactionId =
+                    Guid.NewGuid().ToString("N");
 
-                    if (!string.IsNullOrWhiteSpace(downloadDirectory) &&
-                        Directory.Exists(downloadDirectory) &&
-                        !Directory.EnumerateFileSystemEntries(downloadDirectory).Any())
+                var stagedIsoFileName =
+                    $".ps3butler-{transactionId}.iso";
+
+                var stagedIsoPath =
+                    Path.Combine(
+                        destinationPath,
+                        stagedIsoFileName);
+
+                var stagedKeyPath =
+                    Path.Combine(
+                        destinationPath,
+                        $".ps3butler-{transactionId}.dkey");
+
+                var isoPublished =
+                    false;
+
+                var keyPublished =
+                    false;
+
+                var copyProgress =
+                    new Progress<TransferProgress>(value =>
                     {
-                        Directory.Delete(downloadDirectory);
+                        job.Progress =
+                            value.Percentage;
+
+                        job.TransferSpeedMbps =
+                            value.MegabytesPerSecond;
+
+                        if (value.EstimatedRemaining.HasValue)
+                        {
+                            var eta =
+                                value.EstimatedRemaining.Value;
+
+                            job.EtaText =
+                                $"Copying — " +
+                                $"{value.MegabytesPerSecond:F1} MB/s — " +
+                                $"{eta:hh\\:mm\\:ss} remaining";
+                        }
+                        else
+                        {
+                            job.EtaText =
+                                $"Copying — " +
+                                $"{value.MegabytesPerSecond:F1} MB/s";
+                        }
+                    });
+
+                try
+                {
+                    var deliveryResult =
+                        await deliveryService.CopyAsync(
+                            inputIsoPath,
+                            destinationPath,
+                            copyProgress,
+                            stagedIsoFileName,
+                            cancellationToken);
+
+                    if (!deliveryResult.Success)
+                    {
+                        job.Status = "Error";
+                        job.CurrentStage = "Error";
+                        job.Details =
+                            deliveryResult.Error;
+                        return;
                     }
 
-                    job.LocalSourcePath = null;
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    await File.WriteAllTextAsync(
+                        stagedKeyPath,
+                        job.DiscKey,
+                        cancellationToken);
+
+                    if (!File.Exists(stagedIsoPath))
+                    {
+                        job.Status = "Error";
+                        job.CurrentStage = "Error";
+                        job.Details =
+                            "Staged encrypted ISO was not found.";
+                        return;
+                    }
+
+                    if (!File.Exists(stagedKeyPath))
+                    {
+                        job.Status = "Error";
+                        job.CurrentStage = "Error";
+                        job.Details =
+                            "Staged disc key was not found.";
+                        return;
+                    }
+
+                    var stagedIsoInfo =
+                        new FileInfo(stagedIsoPath);
+
+                    var sourceIsoInfo =
+                        new FileInfo(inputIsoPath);
+
+                    if (stagedIsoInfo.Length !=
+                        sourceIsoInfo.Length)
+                    {
+                        job.Status = "Error";
+                        job.CurrentStage = "Error";
+                        job.Details =
+                            "Staged encrypted ISO size does not match source.";
+                        return;
+                    }
+
+                    var stagedKeyText =
+                        await File.ReadAllTextAsync(
+                            stagedKeyPath,
+                            cancellationToken);
+
+                    if (!string.Equals(
+                            stagedKeyText.Trim(),
+                            job.DiscKey.Trim(),
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        job.Status = "Error";
+                        job.CurrentStage = "Error";
+                        job.Details =
+                            "Staged disc key does not match expected key.";
+                        return;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    /*
+                     * Publish the pair.
+                     *
+                     * Both staged files are already complete and live on the
+                     * destination filesystem, so these are rename operations.
+                     *
+                     * If publishing the second file fails, the catch block
+                     * rolls the first one back.
+                     */
+                    File.Move(
+                        stagedIsoPath,
+                        finalIsoPath,
+                        overwrite: false);
+
+                    isoPublished =
+                        true;
+
+                    File.Move(
+                        stagedKeyPath,
+                        finalKeyPath,
+                        overwrite: false);
+
+                    keyPublished =
+                        true;
+
+                    job.OutputPath =
+                        finalIsoPath;
                 }
-            }
-            catch (Exception ex)
-            {
+                catch (OperationCanceledException)
+                {
+                    job.Status = "Error";
+                    job.CurrentStage = "Error";
+                    job.Details =
+                        "Encrypted ISO delivery cancelled.";
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    job.Status = "Error";
+                    job.CurrentStage = "Error";
+                    job.Details =
+                        $"Encrypted ISO/key delivery failed: {ex.Message}";
+                    return;
+                }
+                finally
+                {
+                    /*
+                     * If only one member of the pair was published,
+                     * remove it again so the destination never contains
+                     * a half-published ISO/key pair.
+                     */
+                    if (isoPublished &&
+                        !keyPublished)
+                    {
+                        TryDeleteFile(
+                            finalIsoPath);
+                    }
+
+                    if (keyPublished &&
+                        !isoPublished)
+                    {
+                        TryDeleteFile(
+                            finalKeyPath);
+                    }
+
+                    TryDeleteFile(
+                        stagedIsoPath);
+
+                    TryDeleteFile(
+                        stagedKeyPath);
+                }
+
+                try
+                {
+                    if (job.SourceType == GameSourceType.Url &&
+                        !string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
+                        File.Exists(job.LocalSourcePath))
+                    {
+                        var downloadDirectory =
+                            Path.GetDirectoryName(
+                                job.LocalSourcePath);
+
+                        File.Delete(
+                            job.LocalSourcePath);
+
+                        if (!string.IsNullOrWhiteSpace(
+                                downloadDirectory) &&
+                            Directory.Exists(
+                                downloadDirectory) &&
+                            !Directory
+                                .EnumerateFileSystemEntries(
+                                    downloadDirectory)
+                                .Any())
+                        {
+                            Directory.Delete(
+                                downloadDirectory);
+                        }
+
+                        job.LocalSourcePath =
+                            null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    job.Status = "Complete";
+                    job.CurrentStage = "Complete";
+                    job.Progress = 100;
+                    job.EtaText = string.Empty;
+                    job.Details =
+                        $"Encrypted ISO and key copied successfully, " +
+                        $"but temporary cleanup failed: {ex.Message}";
+                    return;
+                }
+
                 job.Status = "Complete";
                 job.CurrentStage = "Complete";
                 job.Progress = 100;
                 job.EtaText = string.Empty;
                 job.Details =
-                    $"Encrypted ISO and key copied successfully, but temporary cleanup failed: {ex.Message}";
+                    $"Encrypted ISO and key copied to: {job.OutputPath}";
+
                 return;
             }
-            job.Status = "Complete";
-            job.CurrentStage = "Complete";
-            job.Progress = 100;
-            job.EtaText = string.Empty;
-            job.Details =
-                $"Encrypted ISO and key copied to: {job.OutputPath}";
-
-            return;
-        }
-
-        job.Status = "Decrypting";
+            
+            job.Status = "Decrypting";
         job.CurrentStage = "Decrypting";
         job.Progress = 0;
         job.Details =
@@ -284,7 +460,10 @@ public sealed class JobExecutionService
             return;
         }
 
-        var metadata =
+            decryptedIsoPath =
+                decryptResult.OutputPath;
+
+            var metadata =
             await decryptedIsoMetadataService.ReadMetadataAsync(
                 decryptResult.OutputPath,
                 _options.WorkDirectory,
@@ -559,18 +738,29 @@ public sealed class JobExecutionService
         job.Progress = 100;
         job.EtaText = string.Empty;
 
-        if (job.OutputFormat ==
-            OutputFormat.DecryptedIso)
-        {
-            job.Details =
-                $"Decrypted ISO copied to: {job.OutputPath}";
+            if (job.OutputFormat ==
+                OutputFormat.DecryptedIso)
+            {
+                job.Details =
+                    $"Decrypted ISO copied to: {job.OutputPath}";
+            }
+            else
+            {
+                job.Details =
+                    $"JB folder copied to: {job.OutputPath}";
+            }
         }
-        else
+        finally
         {
-            job.Details =
-                $"JB folder copied to: {job.OutputPath}";
-        }
+            TryDeleteFile(
+                decryptedIsoPath);
 
+            TryDeleteDirectory(
+                temporaryExtractionDirectory);
+
+            TryDeleteDirectory(
+                temporaryJbDirectory);
+        }
     }
 
     private static string MakeSafeFolderName(string name)
@@ -592,5 +782,49 @@ public sealed class JobExecutionService
         }
 
         return name.Trim();
+    }
+
+    private static void TryDeleteFile(
+        string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort temporary cleanup only.
+        }
+    }
+
+    private static void TryDeleteDirectory(
+        string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(
+                    path,
+                    recursive: true);
+            }
+        }
+        catch
+        {
+            // Best-effort temporary cleanup only.
+        }
     }
 }

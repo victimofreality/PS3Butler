@@ -132,19 +132,56 @@ public class GamePreflightService
         {
             var existingEncryptedIso =
                 _destinationInspectionService
-                    .FindExistingEncryptedIsoWithKey(
+                    .FindExistingIsoOnly(
                         destinationDirectory,
                         gameName);
 
             if (existingEncryptedIso is not null)
             {
-                job.Status = "Already exists";
+                var existingKeyPath =
+                    Path.ChangeExtension(
+                        existingEncryptedIso,
+                        ".dkey");
+
+                if (File.Exists(existingKeyPath))
+                {
+                    job.Status = "Already exists";
+                    job.Details =
+                        $"Destination already contains encrypted ISO + key: " +
+                        $"{Path.GetFileName(existingEncryptedIso)}";
+                }
+                else
+                {
+                    job.Status = "Error";
+                    job.Details =
+                        $"Destination already contains ISO without matching .dkey: " +
+                        $"{Path.GetFileName(existingEncryptedIso)}";
+                }
+
+                return;
+            }
+
+            var expectedIsoPath =
+                Path.Combine(
+                    destinationDirectory,
+                    job.DetectedIsoName ??
+                    $"{gameName}.iso");
+
+            var expectedKeyPath =
+                Path.ChangeExtension(
+                    expectedIsoPath,
+                    ".dkey");
+
+            if (File.Exists(expectedKeyPath))
+            {
+                job.Status = "Error";
                 job.Details =
-                    $"Destination already contains encrypted ISO + key: " +
-                    $"{Path.GetFileName(existingEncryptedIso)}";
+                    $"Destination already contains .dkey without matching ISO: " +
+                    $"{Path.GetFileName(expectedKeyPath)}";
                 return;
             }
         }
+
         else
         {
             var existingGame =
