@@ -57,12 +57,35 @@ public class KeyIndexService
 
         try
         {
-            var contents = File.ReadAllText(keyPath).Trim();
+            var bytes =
+                File.ReadAllBytes(keyPath);
+
+            /*
+             * Redump disc keys may be stored either as:
+             *
+             * - 16 raw binary bytes
+             * - 32 hexadecimal text characters
+             *
+             * Internally Butler always uses the 32-character
+             * hexadecimal representation.
+             */
+            if (bytes.Length == 16)
+            {
+                key =
+                    Convert.ToHexString(bytes);
+
+                return true;
+            }
+
+            var contents =
+                File.ReadAllText(keyPath).Trim();
 
             if (contents.Length != 32)
             {
                 error =
-                    $"Key is {contents.Length} characters long; expected 32.";
+                    $"Key is neither a 16-byte binary key nor a " +
+                    $"32-character hexadecimal key.";
+
                 return false;
             }
 
@@ -70,17 +93,23 @@ public class KeyIndexService
             {
                 if (!Uri.IsHexDigit(character))
                 {
-                    error = "Key contains non-hexadecimal characters.";
+                    error =
+                        "Key contains non-hexadecimal characters.";
+
                     return false;
                 }
             }
 
-            key = contents.ToUpperInvariant();
+            key =
+                contents.ToUpperInvariant();
+
             return true;
         }
         catch (Exception ex)
         {
-            error = $"Could not read key file: {ex.Message}";
+            error =
+                $"Could not read key file: {ex.Message}";
+
             return false;
         }
     }
