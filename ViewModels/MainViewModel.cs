@@ -23,6 +23,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly Window _window;
     private readonly KeyIndexService _keyIndexService;
     private readonly MetadataCacheService _metadataCacheService;
+    private readonly QueuePreflightCoordinator _preflightCoordinator;
     private readonly QueueStateService _queueStateService;
     private readonly QueuePersistenceCoordinator _queuePersistence;
     private CancellationTokenSource? _pipelineCancellationTokenSource;
@@ -94,6 +95,10 @@ public partial class MainViewModel : ViewModelBase
         _metadataCacheService =
             new MetadataCacheService(
                 _settingsService);
+
+        _preflightCoordinator =
+            new QueuePreflightCoordinator(
+                _metadataCacheService);
 
         _queueStateService =
             new QueueStateService(
@@ -306,36 +311,14 @@ public partial class MainViewModel : ViewModelBase
     private async Task PreflightQueueWithReservations(
         PreflightReservationSet reservations)
     {
-        _keyIndexService.Build(
-            RedumpKeysPath);
-
-        var archiveInspectionService =
-            new ArchiveInspectionService(
-                SevenZipPath);
-
-        var destinationInspectionService =
-            new DestinationInspectionService();
-
-        var preflightService =
-            new GamePreflightService(
-                _keyIndexService,
-                archiveInspectionService,
-                destinationInspectionService,
-                _metadataCacheService,
-                IsoDestinationPath,
-                JbDestinationPath,
-                reservations);
-
-        foreach (var job in Jobs)
-        {
-            if (job.Status == "Complete")
-            {
-                continue;
-            }
-
-            await preflightService.PreflightAsync(
-                job);
-        }
+        await _preflightCoordinator.PreflightQueueAsync(
+            Jobs,
+            _keyIndexService,
+            RedumpKeysPath,
+            SevenZipPath,
+            IsoDestinationPath,
+            JbDestinationPath,
+            reservations);
     }
 
     [RelayCommand]
@@ -432,22 +415,11 @@ public partial class MainViewModel : ViewModelBase
              * download finishes. That lets processing begin immediately rather
              * than waiting for every URL in the queue to download first.
              */
-            _keyIndexService.Build(
-                RedumpKeysPath);
-
-            var archiveInspectionService =
-                new ArchiveInspectionService(
-                    SevenZipPath);
-
-            var destinationInspectionService =
-                new DestinationInspectionService();
-
             var preflightService =
-                new GamePreflightService(
+                _preflightCoordinator.CreateService(
                     _keyIndexService,
-                    archiveInspectionService,
-                    destinationInspectionService,
-                    _metadataCacheService,
+                    RedumpKeysPath,
+                    SevenZipPath,
                     IsoDestinationPath,
                     JbDestinationPath,
                     preflightReservations);
