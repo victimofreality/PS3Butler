@@ -66,7 +66,7 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string UrlToAdd { get; set; } = string.Empty;
-    
+
     [ObservableProperty]
     public partial bool IsPipelineActive { get; set; }
 
@@ -323,255 +323,261 @@ public partial class MainViewModel : ViewModelBase
 
         IsPipelineActive = true;
 
-        _pipelineCancellationTokenSource?.Dispose();
-
-        _pipelineCancellationTokenSource =
-            new CancellationTokenSource();
-
-
-        var pipelineCancellationToken =
-            _pipelineCancellationTokenSource.Token;
-
-        /*
-         * Preflight everything we can before starting.
-         *
-         * Local jobs can become Ready immediately. URL jobs that have not
-         * downloaded yet remain Waiting until their download completes.
-         */
-        var preflightReservations =
-            new PreflightReservationSet();
-
-        await PreflightQueueWithReservations(
-            preflightReservations);
-
-        var queuedJobs =
-            Jobs.ToList();
-
-        var processingTasks =
-            new List<Task>();
-
-        using var processingGate =
-            new SemaphoreSlim(1, 1);
-
-        async Task ProcessQueuedJobAsync(
-            GameJob queuedJob)
+        try
         {
-            await processingGate.WaitAsync();
+            _pipelineCancellationTokenSource?.Dispose();
 
-            try
+            _pipelineCancellationTokenSource =
+                new CancellationTokenSource();
+
+
+            var pipelineCancellationToken =
+                _pipelineCancellationTokenSource.Token;
+
+            /*
+             * Preflight everything we can before starting.
+             *
+             * Local jobs can become Ready immediately. URL jobs that have not
+             * downloaded yet remain Waiting until their download completes.
+             */
+            var preflightReservations =
+                new PreflightReservationSet();
+
+            await PreflightQueueWithReservations(
+                preflightReservations);
+
+            var queuedJobs =
+                Jobs.ToList();
+
+            var processingTasks =
+                new List<Task>();
+
+            using var processingGate =
+                new SemaphoreSlim(1, 1);
+
+            async Task ProcessQueuedJobAsync(
+                GameJob queuedJob)
+            {
+                await processingGate.WaitAsync();
+
+                try
+                {
+                    if (pipelineCancellationToken.IsCancellationRequested)
+                    {
+                        queuedJob.Status = "Error";
+                        queuedJob.CurrentStage = "Cancelled";
+                        queuedJob.Details = "Processing cancelled.";
+                        return;
+                    }
+
+                    await ProcessSingleJobAsync(
+                        queuedJob,
+                        pipelineCancellationToken);
+                }
+                finally
+                {
+                    processingGate.Release();
+                }
+            }
+
+            /*
+             * Start any local/already-downloaded Ready jobs immediately.
+             *
+             * ProcessQueuedJobAsync is protected by processingGate, so there is
+             * never more than one extract/decrypt/copy pipeline running at once.
+             */
+            foreach (var job in queuedJobs)
             {
                 if (pipelineCancellationToken.IsCancellationRequested)
                 {
-                    queuedJob.Status = "Error";
-                    queuedJob.CurrentStage = "Cancelled";
-                    queuedJob.Details = "Processing cancelled.";
-                    return;
+                    break;
+                }
+                if (job.Status == "Ready")
+                {
+                    processingTasks.Add(
+                        ProcessQueuedJobAsync(job));
+                }
+            }
+
+            var downloadService =
+                new DownloadService();
+
+            /*
+             * This preflight instance is used for URL jobs as each individual
+             * download finishes. That lets processing begin immediately rather
+             * than waiting for every URL in the queue to download first.
+             */
+            _keyIndexService.Build(
+                RedumpKeysPath);
+
+            var archiveInspectionService =
+                new ArchiveInspectionService(
+                    SevenZipPath);
+
+            var destinationInspectionService =
+                new DestinationInspectionService();
+
+            var preflightService =
+                new GamePreflightService(
+                    _keyIndexService,
+                    archiveInspectionService,
+                    destinationInspectionService,
+                    _metadataCacheService,
+                    IsoDestinationPath,
+                    JbDestinationPath,
+                    preflightReservations);
+
+            /*
+             * Downloads remain deliberately sequential.
+             *
+             * As soon as one download completes and passes preflight, its
+             * processing task is queued. The next download can then start while
+             * that game is extracting/decrypting/copying.
+             */
+            foreach (var job in queuedJobs)
+            {
+                if (job.SourceType != GameSourceType.Url ||
+                    job.Status == "Complete" ||
+                    job.Status == "Already exists")
+                {
+                    continue;
                 }
 
-                await ProcessSingleJobAsync(
-                    queuedJob,
-                    pipelineCancellationToken);
-            }
-            finally
-            {
-                processingGate.Release();
-            }
-        }
-
-        /*
-         * Start any local/already-downloaded Ready jobs immediately.
-         *
-         * ProcessQueuedJobAsync is protected by processingGate, so there is
-         * never more than one extract/decrypt/copy pipeline running at once.
-         */
-        foreach (var job in queuedJobs)
-        {
-            if (pipelineCancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            if (job.Status == "Ready")
-            {
-                processingTasks.Add(
-                    ProcessQueuedJobAsync(job));
-            }
-        }
-
-        var downloadService =
-            new DownloadService();
-
-        /*
-         * This preflight instance is used for URL jobs as each individual
-         * download finishes. That lets processing begin immediately rather
-         * than waiting for every URL in the queue to download first.
-         */
-        _keyIndexService.Build(
-            RedumpKeysPath);
-
-        var archiveInspectionService =
-            new ArchiveInspectionService(
-                SevenZipPath);
-
-        var destinationInspectionService =
-            new DestinationInspectionService();
-
-        var preflightService =
-            new GamePreflightService(
-                _keyIndexService,
-                archiveInspectionService,
-                destinationInspectionService,
-                _metadataCacheService,
-                IsoDestinationPath,
-                JbDestinationPath,
-                preflightReservations);
-
-        /*
-         * Downloads remain deliberately sequential.
-         *
-         * As soon as one download completes and passes preflight, its
-         * processing task is queued. The next download can then start while
-         * that game is extracting/decrypting/copying.
-         */
-        foreach (var job in queuedJobs)
-        {
-            if (job.SourceType != GameSourceType.Url ||
-                job.Status == "Complete" ||
-                job.Status == "Already exists")
-            {
-                continue;
-            }
-
-            /*
-             * A URL job with an existing local source was already handled by
-             * the initial preflight above.
-             */
-            if (!string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
-                File.Exists(job.LocalSourcePath))
-            {
-                continue;
-            }
-
-            /*
-             * Give each download its own cancellation and pause state.
-             * Cancelling one download therefore does not poison every URL
-             * remaining in the queue.
-             */
-            _downloadCancellationTokenSource?.Dispose();
-
-            _downloadCancellationTokenSource =
-                CancellationTokenSource.CreateLinkedTokenSource(
-                    pipelineCancellationToken);
-
-            _downloadPauseTokenSource =
-                new PauseTokenSource();
-
-            job.Status = "Downloading";
-            job.CurrentStage = "Downloading";
-            job.Progress = 0;
-            job.TransferSpeedMbps = 0;
-            job.EtaText = string.Empty;
-            job.Details =
-                "Downloading source file...";
-
-            var downloadDirectory =
-                Path.Combine(
-                    WorkDirectory,
-                    "download",
-                    Guid.NewGuid().ToString("N"));
-
-            var downloadProgress =
-                new Progress<TransferProgress>(value =>
+                /*
+                 * A URL job with an existing local source was already handled by
+                 * the initial preflight above.
+                 */
+                if (!string.IsNullOrWhiteSpace(job.LocalSourcePath) &&
+                    File.Exists(job.LocalSourcePath))
                 {
-                    job.Progress =
-                        value.Percentage;
+                    continue;
+                }
 
-                    job.TransferSpeedMbps =
-                        value.MegabytesPerSecond;
+                /*
+                 * Give each download its own cancellation and pause state.
+                 * Cancelling one download therefore does not poison every URL
+                 * remaining in the queue.
+                 */
+                _downloadCancellationTokenSource?.Dispose();
 
-                    if (value.EstimatedRemaining.HasValue)
-                    {
-                        var eta =
-                            value.EstimatedRemaining.Value;
+                _downloadCancellationTokenSource =
+                    CancellationTokenSource.CreateLinkedTokenSource(
+                        pipelineCancellationToken);
 
-                        job.EtaText =
-                            $"Downloading — " +
-                            $"{value.MegabytesPerSecond:F1} MB/s — " +
-                            $"{eta:hh\\:mm\\:ss} remaining";
-                    }
-                    else
-                    {
-                        job.EtaText =
-                            $"Downloading — " +
-                            $"{value.MegabytesPerSecond:F1} MB/s";
-                    }
-                });
+                _downloadPauseTokenSource =
+                    new PauseTokenSource();
 
-            var downloadResult =
-                await downloadService.DownloadAsync(
-                    job.SourcePath,
-                    downloadDirectory,
-                    downloadProgress,
-                    _downloadCancellationTokenSource.Token,
-                    _downloadPauseTokenSource);
-
-            if (!downloadResult.Success)
-            {
-                TemporaryDownloadCleanupService.CleanupDirectory(
-                    downloadDirectory,
-                    WorkDirectory);
-
-                job.Status = "Error";
-                job.CurrentStage = "Error";
+                job.Status = "Downloading";
+                job.CurrentStage = "Downloading";
+                job.Progress = 0;
+                job.TransferSpeedMbps = 0;
+                job.EtaText = string.Empty;
                 job.Details =
-                    downloadResult.Error;
-                continue;
+                    "Downloading source file...";
+
+                var downloadDirectory =
+                    Path.Combine(
+                        WorkDirectory,
+                        "download",
+                        Guid.NewGuid().ToString("N"));
+
+                var downloadProgress =
+                    new Progress<TransferProgress>(value =>
+                    {
+                        job.Progress =
+                            value.Percentage;
+
+                        job.TransferSpeedMbps =
+                            value.MegabytesPerSecond;
+
+                        if (value.EstimatedRemaining.HasValue)
+                        {
+                            var eta =
+                                value.EstimatedRemaining.Value;
+
+                            job.EtaText =
+                                $"Downloading — " +
+                                $"{value.MegabytesPerSecond:F1} MB/s — " +
+                                $"{eta:hh\\:mm\\:ss} remaining";
+                        }
+                        else
+                        {
+                            job.EtaText =
+                                $"Downloading — " +
+                                $"{value.MegabytesPerSecond:F1} MB/s";
+                        }
+                    });
+
+                var downloadResult =
+                    await downloadService.DownloadAsync(
+                        job.SourcePath,
+                        downloadDirectory,
+                        downloadProgress,
+                        _downloadCancellationTokenSource.Token,
+                        _downloadPauseTokenSource);
+
+                if (!downloadResult.Success)
+                {
+                    TemporaryDownloadCleanupService.CleanupDirectory(
+                        downloadDirectory,
+                        WorkDirectory);
+
+                    job.Status = "Error";
+                    job.CurrentStage = "Error";
+                    job.Details =
+                        downloadResult.Error;
+                    continue;
+                }
+
+                job.LocalSourcePath =
+                    downloadResult.OutputPath;
+
+                job.Status = "Waiting";
+                job.CurrentStage = string.Empty;
+                job.Progress = 0;
+                job.TransferSpeedMbps = 0;
+                job.EtaText = string.Empty;
+                job.Details =
+                    "Download complete. Preflighting...";
+
+                await preflightService.PreflightAsync(
+                    job);
+
+                if (job.Status == "Ready")
+                {
+                    processingTasks.Add(
+                        ProcessQueuedJobAsync(job));
+                }
+                else
+                {
+                    TemporaryDownloadCleanupService.CleanupFile(
+                        job.LocalSourcePath,
+                        WorkDirectory);
+
+                    job.LocalSourcePath = null;
+                }
+
             }
 
-            job.LocalSourcePath =
-                downloadResult.OutputPath;
-
-            job.Status = "Waiting";
-            job.CurrentStage = string.Empty;
-            job.Progress = 0;
-            job.TransferSpeedMbps = 0;
-            job.EtaText = string.Empty;
-            job.Details =
-                "Download complete. Preflighting...";
-
-            await preflightService.PreflightAsync(
-                job);
-
-            if (job.Status == "Ready")
-            {
-                processingTasks.Add(
-                    ProcessQueuedJobAsync(job));
-            }
-            else
-            {
-                TemporaryDownloadCleanupService.CleanupFile(
-                    job.LocalSourcePath,
-                    WorkDirectory);
-
-                job.LocalSourcePath = null;
-            }
+            /*
+             * All downloads are now finished. Processing may still be working
+             * through the queue, so wait for it before ProcessReadyJobs returns.
+             */
+            await Task.WhenAll(
+                processingTasks);
 
         }
+        finally
+        {
+            _downloadCancellationTokenSource?.Dispose();
+            _downloadCancellationTokenSource = null;
+            _downloadPauseTokenSource = null;
 
-        /*
-         * All downloads are now finished. Processing may still be working
-         * through the queue, so wait for it before ProcessReadyJobs returns.
-         */
-        await Task.WhenAll(
-            processingTasks);
+            _pipelineCancellationTokenSource?.Dispose();
+            _pipelineCancellationTokenSource = null;
 
-        _downloadCancellationTokenSource?.Dispose();
-        _downloadCancellationTokenSource = null;
-        _downloadPauseTokenSource = null;
-
-        _pipelineCancellationTokenSource?.Dispose();
-        _pipelineCancellationTokenSource = null;
-
-        IsPipelineActive = false;
+            IsPipelineActive = false;
+        }
     }
 
     private async Task ProcessSingleJobAsync(
