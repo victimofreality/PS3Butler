@@ -38,10 +38,7 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial string RedrrxPs3DecPath { get; set; }
 
-    [ObservableProperty]
-    public partial string ClassicPs3DecPath { get; set; }
-
-    [ObservableProperty]
+   [ObservableProperty]
     public partial string SevenZipPath { get; set; }
 
     [ObservableProperty]
@@ -98,7 +95,6 @@ public partial class MainViewModel : ViewModelBase
 
 
         RedrrxPs3DecPath = _settings.RedrrxPs3DecPath;
-        ClassicPs3DecPath = _settings.ClassicPs3DecPath;
         SevenZipPath = _settings.SevenZipPath;
         RedumpKeysPath = _settings.RedumpKeysPath;
         WorkDirectory = _settings.WorkDirectory;
@@ -118,11 +114,6 @@ public partial class MainViewModel : ViewModelBase
         if (!File.Exists(RedrrxPs3DecPath))
         {
             errors.Add("PS3Dec (Redrrx) executable not found.");
-        }
-
-        if (!File.Exists(ClassicPs3DecPath))
-        {
-            errors.Add("PS3Dec (Classic) executable not found.");
         }
 
         if (!File.Exists(SevenZipPath))
@@ -162,7 +153,6 @@ public partial class MainViewModel : ViewModelBase
         }
 
         _settings.RedrrxPs3DecPath = RedrrxPs3DecPath;
-        _settings.ClassicPs3DecPath = ClassicPs3DecPath;
         _settings.SevenZipPath = SevenZipPath;
         _settings.RedumpKeysPath = RedumpKeysPath;
         _settings.Ps3DecThreadCount = Ps3DecThreadCount;
@@ -607,17 +597,6 @@ public partial class MainViewModel : ViewModelBase
 
     }
 
-
-    [RelayCommand]
-    private async Task BrowseClassicPs3Dec()
-    {
-        var path = await PickExecutableAsync("Select PS3Dec.exe");
-
-        if (path is not null)
-        {
-            ClassicPs3DecPath = path;
-        }
-    }
 
     [RelayCommand]
     private async Task BrowseSevenZip()

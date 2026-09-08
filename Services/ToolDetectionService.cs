@@ -24,10 +24,6 @@ public class ToolDetectionService
                 _settings.RedrrxPs3DecPath),
 
             CheckFile(
-                "PS3Dec (Classic)",
-                _settings.ClassicPs3DecPath),
-
-            CheckFile(
                 "7-Zip",
                 _settings.SevenZipPath),
 

@@ -49,19 +49,6 @@
 							Command="{Binding BrowseRedrrxPs3DecCommand}" />
 					</Grid>
 
-					<TextBlock Text="PS3Dec (Classic)" />
-
-					<Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-						<TextBox
-							Grid.Column="0"
-							Text="{Binding ClassicPs3DecPath}" />
-
-						<Button
-							Grid.Column="1"
-							Content="Browse..."
-							Command="{Binding BrowseClassicPs3DecCommand}" />
-					</Grid>
-
 					<TextBlock Text="7-Zip" />
 
 					<Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
