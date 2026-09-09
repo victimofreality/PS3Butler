@@ -27,6 +27,8 @@ public partial class MainViewModel : ViewModelBase
     private readonly QueueStateService _queueStateService;
     private readonly QueuePersistenceCoordinator _queuePersistence;
     private readonly PipelineRunCoordinator _pipelineRunCoordinator;
+    private readonly Task _startupCleanupTask;
+    private CancellationTokenSource? _startupWaitCancellation;
     private int _toolStatusRefreshVersion;
 
     public string Greeting { get; } = "PS3 Butler";
@@ -134,18 +136,34 @@ public partial class MainViewModel : ViewModelBase
 
         _queuePersistence.Start();
 
-        var staleArtifactsRemoved =
-            StaleStagingCleanupService.Cleanup(
+        _startupCleanupTask = CleanupStaleStagingAsync(
                 IsoDestinationPath,
                 JbDestinationPath);
 
-        if (staleArtifactsRemoved > 0)
-        {
-            SettingsStatus =
-                $"Removed {staleArtifactsRemoved} stale staging artifact(s).";
-        }
-
         _ = RefreshToolStatusAsync();
+    }
+
+    private async Task CleanupStaleStagingAsync(
+        string isoDestinationPath,
+        string jbDestinationPath)
+    {
+        try
+        {
+            var staleArtifactsRemoved = await Task.Run(() =>
+                StaleStagingCleanupService.Cleanup(
+                    isoDestinationPath,
+                    jbDestinationPath));
+
+            if (staleArtifactsRemoved > 0)
+            {
+                SettingsStatus =
+                    $"Removed {staleArtifactsRemoved} stale staging artifact(s).";
+            }
+        }
+        catch (Exception ex)
+        {
+            SettingsStatus = $"Could not clean stale staging files: {ex.Message}";
+        }
     }
 
     [RelayCommand]
@@ -313,6 +331,8 @@ public partial class MainViewModel : ViewModelBase
     private async Task PreflightQueueWithReservations(
         PreflightReservationSet reservations)
     {
+        await _startupCleanupTask;
+
         await _preflightCoordinator.PreflightQueueAsync(
             Jobs,
             _keyIndexService,
@@ -332,6 +352,8 @@ public partial class MainViewModel : ViewModelBase
         }
 
         IsPipelineActive = true;
+        using var startupWaitCancellation = new CancellationTokenSource();
+        _startupWaitCancellation = startupWaitCancellation;
 
         try
         {
@@ -363,12 +385,21 @@ public partial class MainViewModel : ViewModelBase
                         RemovePs3Update
                 };
 
+            // Finish startup cleanup before any new staging files can be created.
+            await _startupCleanupTask.WaitAsync(startupWaitCancellation.Token);
+            startupWaitCancellation.Token.ThrowIfCancellationRequested();
+
             await _pipelineRunCoordinator.RunAsync(
                 Jobs,
                 runSettings);
         }
+        catch (OperationCanceledException) when (startupWaitCancellation.IsCancellationRequested)
+        {
+            // Cancel the pending run without interrupting shared startup cleanup.
+        }
         finally
         {
+            _startupWaitCancellation = null;
             IsPipelineActive = false;
         }
     }
@@ -623,6 +654,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void CancelDownload()
     {
+        _startupWaitCancellation?.Cancel();
         _pipelineRunCoordinator.Cancel();
     }
 
