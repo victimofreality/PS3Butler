@@ -82,7 +82,7 @@ public class GamePreflightService
         if (job.SourceType == GameSourceType.Url &&
             string.IsNullOrWhiteSpace(job.LocalSourcePath))
         {
-            job.Status = "Waiting";
+            job.State = JobState.Waiting;
             job.Details = "Waiting to download.";
             return;
         }
@@ -91,7 +91,7 @@ public class GamePreflightService
 
         if (!File.Exists(sourcePath))
         {
-            job.Status = "Error";
+            job.State = JobState.Error;
             job.Details = "Source file does not exist.";
             return;
         }
@@ -102,7 +102,7 @@ public class GamePreflightService
                 extension,
                 StringComparer.OrdinalIgnoreCase))
         {
-            job.Status = "Error";
+            job.State = JobState.Error;
             job.Details = $"Unsupported file type: {extension}";
             return;
         }
@@ -121,6 +121,8 @@ public class GamePreflightService
         }
         else
         {
+            job.State = JobState.Running;
+            // Preserve the existing display text until stage reporting is migrated.
             job.Status = "Inspecting archive";
 
             var isoName =
@@ -129,7 +131,7 @@ public class GamePreflightService
 
             if (isoName is null)
             {
-                job.Status = "Error";
+                job.State = JobState.Error;
                 job.Details =
                     "Archive does not contain exactly one detectable ISO.";
                 return;
@@ -153,7 +155,7 @@ public class GamePreflightService
 
         if (string.IsNullOrWhiteSpace(destinationDirectory))
         {
-            job.Status = "Error";
+            job.State = JobState.Error;
             job.Details =
                 job.OutputFormat == OutputFormat.JbFolder
                     ? "JB destination is not configured."
@@ -166,7 +168,7 @@ public class GamePreflightService
                 destinationDirectory,
                 gameName))
         {
-            job.Status = "Already exists";
+            job.State = JobState.AlreadyExists;
             job.Details =
                 $"Another queued job already reserves: {gameName}";
             return;
@@ -191,14 +193,14 @@ public class GamePreflightService
 
                 if (File.Exists(existingKeyPath))
                 {
-                    job.Status = "Already exists";
+                    job.State = JobState.AlreadyExists;
                     job.Details =
                         $"Destination already contains encrypted ISO + key: " +
                         $"{Path.GetFileName(existingEncryptedIso)}";
                 }
                 else
                 {
-                    job.Status = "Error";
+                    job.State = JobState.Error;
                     job.Details =
                         $"Destination already contains ISO without matching .dkey: " +
                         $"{Path.GetFileName(existingEncryptedIso)}";
@@ -220,7 +222,7 @@ public class GamePreflightService
 
             if (File.Exists(expectedKeyPath))
             {
-                job.Status = "Error";
+                job.State = JobState.Error;
                 job.Details =
                     $"Destination already contains .dkey without matching ISO: " +
                     $"{Path.GetFileName(expectedKeyPath)}";
@@ -240,7 +242,7 @@ public class GamePreflightService
 
             if (existingGame is not null)
             {
-                job.Status = "Already exists";
+                job.State = JobState.AlreadyExists;
                 job.Details =
                     $"Destination already contains: " +
                     $"{Path.GetFileName(existingGame)}";
@@ -269,7 +271,7 @@ public class GamePreflightService
 
             if (existingIso is not null)
             {
-                job.Status = "Already exists";
+                job.State = JobState.AlreadyExists;
                 job.Details =
                     $"ISO destination already contains: " +
                     $"{Path.GetFileName(existingIso)}";
@@ -291,8 +293,8 @@ public class GamePreflightService
                 job.TitleId =
                     cachedMetadata.TitleId;
 
-                job.Status =
-                    "Already exists";
+                job.State =
+                    JobState.AlreadyExists;
 
                 job.Details =
                     $"Another queued job already reserves Title ID " +
@@ -323,7 +325,7 @@ public class GamePreflightService
                 if (existingJbGame is not null)
                 {
                     job.TitleId = cachedMetadata.TitleId;
-                    job.Status = "Already exists";
+                    job.State = JobState.AlreadyExists;
                     job.Details =
                         $"Destination already contains " +
                         $"{existingJbGame.Title} " +
@@ -338,7 +340,7 @@ public class GamePreflightService
 
         if (keyPath is null)
         {
-            job.Status = "Missing key";
+            job.State = JobState.MissingKey;
             job.Details =
                 $"No matching .dkey found for \"{gameName}\".";
             return;
@@ -351,7 +353,7 @@ public class GamePreflightService
                 out var discKey,
                 out var keyError))
         {
-            job.Status = "Invalid key";
+            job.State = JobState.InvalidKey;
             job.Details =
                 $"{Path.GetFileName(keyPath)}: {keyError}";
             return;
@@ -365,7 +367,7 @@ public class GamePreflightService
             gameName,
             cachedMetadata?.TitleId);
 
-        job.Status = "Ready";
+        job.State = JobState.Ready;
 
         if (extension.Equals(
                 ".iso",

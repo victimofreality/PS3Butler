@@ -60,8 +60,8 @@ public sealed class QueueStateService
         var persistedJobs =
             jobs
                 .Where(job =>
-                    job.Status != "Complete" &&
-                    job.Status != "Already exists")
+                    job.State != JobState.Complete &&
+                    job.State != JobState.AlreadyExists)
                 .Select(job =>
                     new PersistedGameJob
                     {
@@ -157,7 +157,7 @@ public sealed class QueueStateService
              * an app exit starts again from a clean preflightable state.
              */
             LocalSourcePath = null,
-            Status = "Waiting",
+            State = JobState.Waiting,
             Details =
                 persistedJob.SourceType ==
                 GameSourceType.Url

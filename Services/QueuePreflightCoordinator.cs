@@ -69,7 +69,7 @@ public sealed class QueuePreflightCoordinator
 
         foreach (var job in jobs)
         {
-            if (job.Status == "Complete")
+            if (job.State == JobState.Complete)
             {
                 continue;
             }

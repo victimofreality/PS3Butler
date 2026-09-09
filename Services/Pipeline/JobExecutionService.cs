@@ -74,14 +74,14 @@ public sealed class JobExecutionService
             new DecryptedIsoMetadataService(
                 _options.SevenZipPath);
 
-        if (job.Status != "Ready")
+        if (job.State != JobState.Ready)
         {
             return;
         }
 
         if (string.IsNullOrWhiteSpace(job.DiscKey))
         {
-            job.Status = "Error";
+            job.State = JobState.Error;
             job.Details = "Disc key is missing.";
             return;
         }
@@ -123,8 +123,8 @@ public sealed class JobExecutionService
             }
             else
             {
-                job.Status = "Extracting";
-                job.CurrentStage = "Extracting archive";
+                job.Stage = JobStage.ExtractingArchive;
+                job.State = JobState.Running;
                 job.Progress = 0;
                 job.Details =
                     "Extracting ISO from archive...";
@@ -154,8 +154,8 @@ public sealed class JobExecutionService
 
                 if (!extractionDiskBudget.IsSufficient)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         $"Not enough work-disk space to extract archive. " +
                         extractionDiskBudget.Message;
@@ -183,8 +183,8 @@ public sealed class JobExecutionService
 
                 if (!extractionResult.Success)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         extractionResult.Error;
                     return;
@@ -208,15 +208,16 @@ public sealed class JobExecutionService
 
                 if (!encryptedDestinationBudget.IsSufficient)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         $"Not enough destination space for encrypted ISO. " +
                         encryptedDestinationBudget.Message;
                     return;
                 }
 
-                job.Status = "Copying";
+                job.Stage = JobStage.Copying;
+                job.State = JobState.Running;
                 job.CurrentStage = "Copying encrypted ISO";
                 job.Progress = 0;
                 job.TransferSpeedMbps = 0;
@@ -240,8 +241,8 @@ public sealed class JobExecutionService
 
                 if (File.Exists(finalIsoPath))
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         $"Destination ISO already exists: {finalIsoPath}";
                     return;
@@ -249,8 +250,8 @@ public sealed class JobExecutionService
 
                 if (File.Exists(finalKeyPath))
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         $"Destination key already exists: {finalKeyPath}";
                     return;
@@ -317,8 +318,8 @@ public sealed class JobExecutionService
 
                     if (!deliveryResult.Success)
                     {
-                        job.Status = "Error";
-                        job.CurrentStage = "Error";
+                        job.State = JobState.Error;
+                        job.Stage = JobStage.Error;
                         job.Details =
                             deliveryResult.Error;
                         return;
@@ -333,8 +334,8 @@ public sealed class JobExecutionService
 
                     if (!File.Exists(stagedIsoPath))
                     {
-                        job.Status = "Error";
-                        job.CurrentStage = "Error";
+                        job.State = JobState.Error;
+                        job.Stage = JobStage.Error;
                         job.Details =
                             "Staged encrypted ISO was not found.";
                         return;
@@ -342,8 +343,8 @@ public sealed class JobExecutionService
 
                     if (!File.Exists(stagedKeyPath))
                     {
-                        job.Status = "Error";
-                        job.CurrentStage = "Error";
+                        job.State = JobState.Error;
+                        job.Stage = JobStage.Error;
                         job.Details =
                             "Staged disc key was not found.";
                         return;
@@ -358,8 +359,8 @@ public sealed class JobExecutionService
                     if (stagedIsoInfo.Length !=
                         sourceIsoInfo.Length)
                     {
-                        job.Status = "Error";
-                        job.CurrentStage = "Error";
+                        job.State = JobState.Error;
+                        job.Stage = JobStage.Error;
                         job.Details =
                             "Staged encrypted ISO size does not match source.";
                         return;
@@ -375,8 +376,8 @@ public sealed class JobExecutionService
                             job.DiscKey.Trim(),
                             StringComparison.OrdinalIgnoreCase))
                     {
-                        job.Status = "Error";
-                        job.CurrentStage = "Error";
+                        job.State = JobState.Error;
+                        job.Stage = JobStage.Error;
                         job.Details =
                             "Staged disc key does not match expected key.";
                         return;
@@ -414,16 +415,16 @@ public sealed class JobExecutionService
                 }
                 catch (OperationCanceledException)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         "Encrypted ISO delivery cancelled.";
                     return;
                 }
                 catch (Exception ex)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         $"Encrypted ISO/key delivery failed: {ex.Message}";
                     return;
@@ -456,8 +457,8 @@ public sealed class JobExecutionService
                         stagedKeyPath);
                 }
 
-                job.Status = "Complete";
-                job.CurrentStage = "Complete";
+                job.State = JobState.Complete;
+                job.Stage = JobStage.Complete;
                 job.Progress = 100;
                 job.EtaText = string.Empty;
                 job.Details =
@@ -477,16 +478,16 @@ public sealed class JobExecutionService
 
             if (!decryptionDiskBudget.IsSufficient)
             {
-                job.Status = "Error";
-                job.CurrentStage = "Error";
+                job.State = JobState.Error;
+                job.Stage = JobStage.Error;
                 job.Details =
                     $"Not enough work-disk space to decrypt ISO. " +
                     decryptionDiskBudget.Message;
                 return;
             }
 
-            job.Status = "Decrypting";
-            job.CurrentStage = "Decrypting";
+            job.Stage = JobStage.Decrypting;
+            job.State = JobState.Running;
             job.Progress = 0;
             job.Details =
                 "Decrypting ISO with ps3decrs...";
@@ -507,8 +508,8 @@ public sealed class JobExecutionService
 
             if (!decryptResult.Success)
             {
-                job.Status = "Error";
-                job.CurrentStage = "Error";
+                job.State = JobState.Error;
+                job.Stage = JobStage.Error;
                 job.Details =
                     decryptResult.Error;
                 return;
@@ -543,7 +544,8 @@ public sealed class JobExecutionService
             if (job.OutputFormat ==
                 OutputFormat.DecryptedIso)
             {
-                job.Status = "Copying";
+                job.Stage = JobStage.Copying;
+                job.State = JobState.Running;
                 job.CurrentStage = "Copying ISO";
                 job.Progress = 0;
                 job.TransferSpeedMbps = 0;
@@ -595,8 +597,8 @@ public sealed class JobExecutionService
 
                 if (!decryptedIsoDestinationBudget.IsSufficient)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         $"Not enough destination space for decrypted ISO. " +
                         decryptedIsoDestinationBudget.Message;
@@ -613,8 +615,8 @@ public sealed class JobExecutionService
 
                 if (!deliveryResult.Success)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         deliveryResult.Error;
                     return;
@@ -639,16 +641,18 @@ public sealed class JobExecutionService
 
                 if (!jbWorkspaceBudget.IsSufficient)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         $"Not enough work-disk space to create JB folder. " +
                         jbWorkspaceBudget.Message;
                     return;
                 }
 
+                job.Stage = JobStage.CreatingJbFolder;
+                job.State = JobState.Running;
+                // Keep the existing status label while using the specific JB stage.
                 job.Status = "Extracting";
-                job.CurrentStage = "Creating JB folder";
                 job.Progress = 0;
                 job.Details =
                     "Extracting decrypted ISO to JB folder...";
@@ -692,8 +696,8 @@ public sealed class JobExecutionService
 
                 if (!jbExtractionResult.Success)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         jbExtractionResult.Error;
                     return;
@@ -726,8 +730,8 @@ public sealed class JobExecutionService
 
                 if (!jbDestinationBudget.IsSufficient)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         $"Not enough destination space for JB folder. " +
                         jbDestinationBudget.Message;
@@ -739,7 +743,8 @@ public sealed class JobExecutionService
                         destinationPath,
                         gameFolderName);
 
-                job.Status = "Copying";
+                job.Stage = JobStage.Copying;
+                job.State = JobState.Running;
                 job.CurrentStage = "Copying JB folder";
                 job.Progress = 0;
                 job.TransferSpeedMbps = 0;
@@ -783,8 +788,8 @@ public sealed class JobExecutionService
 
                 if (!folderDeliveryResult.Success)
                 {
-                    job.Status = "Error";
-                    job.CurrentStage = "Error";
+                    job.State = JobState.Error;
+                    job.Stage = JobStage.Error;
                     job.Details =
                         folderDeliveryResult.Error;
                     return;
@@ -823,8 +828,8 @@ public sealed class JobExecutionService
             }
             catch (Exception ex)
             {
-                job.Status = "Complete";
-                job.CurrentStage = "Complete";
+                job.State = JobState.Complete;
+                job.Stage = JobStage.Complete;
                 job.Progress = 100;
                 job.EtaText = string.Empty;
                 job.Details =
@@ -832,8 +837,8 @@ public sealed class JobExecutionService
                 return;
             }
 
-            job.Status = "Complete";
-            job.CurrentStage = "Complete";
+            job.State = JobState.Complete;
+            job.Stage = JobStage.Complete;
             job.Progress = 100;
             job.EtaText = string.Empty;
 

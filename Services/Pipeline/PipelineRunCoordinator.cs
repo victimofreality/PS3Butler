@@ -46,6 +46,14 @@ public sealed class PipelineRunCoordinator
         var pipelineCancellationToken =
             _pipelineCancellationTokenSource.Token;
 
+        var processingTasks =
+            new List<Task>();
+
+        using var processingGate =
+            new SemaphoreSlim(1, 1);
+
+        var runFailed = false;
+
         try
         {
             var preflightReservations =
@@ -62,12 +70,6 @@ public sealed class PipelineRunCoordinator
 
             var queuedJobs =
                 jobs.ToList();
-
-            var processingTasks =
-                new List<Task>();
-
-            using var processingGate =
-                new SemaphoreSlim(1, 1);
 
             async Task ProcessQueuedJobAsync(
                 GameJob queuedJob)
@@ -259,6 +261,14 @@ public sealed class PipelineRunCoordinator
                 }
             }
 
+        }
+        catch
+        {
+            runFailed = true;
+            throw;
+        }
+        finally
+        {
             try
             {
                 await Task.WhenAll(
@@ -271,15 +281,20 @@ public sealed class PipelineRunCoordinator
                  * aggregate cancellation so the caller can cleanly unwind.
                  */
             }
-        }
-        finally
-        {
-            _downloadCancellationTokenSource?.Dispose();
-            _downloadCancellationTokenSource = null;
-            _downloadPauseTokenSource = null;
+            catch when (runFailed)
+            {
+                // All processing has settled. Preserve the original run failure
+                // if processing also failed while the run was unwinding.
+            }
+            finally
+            {
+                _downloadCancellationTokenSource?.Dispose();
+                _downloadCancellationTokenSource = null;
+                _downloadPauseTokenSource = null;
 
-            _pipelineCancellationTokenSource?.Dispose();
-            _pipelineCancellationTokenSource = null;
+                _pipelineCancellationTokenSource?.Dispose();
+                _pipelineCancellationTokenSource = null;
+            }
         }
     }
 

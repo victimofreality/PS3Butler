@@ -116,7 +116,7 @@ public sealed class QueuePersistenceCoordinator
             e.PropertyName ==
                 nameof(GameJob.DestinationOverride) ||
             e.PropertyName ==
-                nameof(GameJob.Status))
+                nameof(GameJob.State))
         {
             Save();
         }

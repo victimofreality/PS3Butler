@@ -255,7 +255,7 @@ public partial class MainViewModel : ViewModelBase
             Jobs.Add(new GameJob
             {
                 SourcePath = file.Path.LocalPath,
-                Status = "Waiting",
+                State = JobState.Waiting,
             });
         }
 
@@ -292,7 +292,7 @@ public partial class MainViewModel : ViewModelBase
         {
             SourcePath = url,
             SourceType = GameSourceType.Url,
-            Status = "Waiting",
+            State = JobState.Waiting,
             Details = "Waiting to download."
         });
 
@@ -536,14 +536,14 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
-        if (SelectedJob.Status != "Error" &&
-            SelectedJob.Status != "Missing key" &&
-            SelectedJob.Status != "Invalid key")
+        if (SelectedJob.State != JobState.Error &&
+            SelectedJob.State != JobState.MissingKey &&
+            SelectedJob.State != JobState.InvalidKey)
         {
             return;
         }
 
-        SelectedJob.Status = "Waiting";
+        SelectedJob.State = JobState.Waiting;
         SelectedJob.Details = string.Empty;
         SelectedJob.CurrentStage = string.Empty;
         SelectedJob.Progress = 0;
@@ -576,8 +576,8 @@ public partial class MainViewModel : ViewModelBase
     {
         var completedJobs = Jobs
             .Where(job =>
-                job.Status == "Complete" ||
-                job.Status == "Already exists")
+                job.State == JobState.Complete ||
+                job.State == JobState.AlreadyExists)
             .ToList();
 
         foreach (var job in completedJobs)
