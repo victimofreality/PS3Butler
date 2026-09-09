@@ -27,6 +27,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly QueueStateService _queueStateService;
     private readonly QueuePersistenceCoordinator _queuePersistence;
     private readonly PipelineRunCoordinator _pipelineRunCoordinator;
+    private int _toolStatusRefreshVersion;
 
     public string Greeting { get; } = "PS3 Butler";
 
@@ -115,9 +116,6 @@ public partial class MainViewModel : ViewModelBase
         _keyIndexService =
             new KeyIndexService();
 
-        _keyIndexService.Build(
-            _settings.RedumpKeysPath);
-
         _pipelineRunCoordinator =
             new PipelineRunCoordinator(
                 _keyIndexService,
@@ -147,11 +145,11 @@ public partial class MainViewModel : ViewModelBase
                 $"Removed {staleArtifactsRemoved} stale staging artifact(s).";
         }
 
-        RefreshToolStatus();
+        _ = RefreshToolStatusAsync();
     }
 
     [RelayCommand]
-    private void SaveSettings()
+    private async Task SaveSettings()
     {
         var errors = new List<string>();
 
@@ -209,7 +207,7 @@ public partial class MainViewModel : ViewModelBase
 
         SettingsStatus = "Settings saved.";
 
-        RefreshToolStatus();
+        await RefreshToolStatusAsync();
     }
 
     [RelayCommand]
@@ -502,15 +500,40 @@ public partial class MainViewModel : ViewModelBase
         return null;
     }
 
-    private void RefreshToolStatus()
+    private async Task RefreshToolStatusAsync()
     {
-        Tools.Clear();
-
-        var toolDetectionService = new ToolDetectionService(_settings);
-
-        foreach (var tool in toolDetectionService.DetectTools())
+        var refreshVersion = ++_toolStatusRefreshVersion;
+        var detectionSettings = new AppSettings
         {
-            Tools.Add(tool);
+            RedrrxPs3DecPath = _settings.RedrrxPs3DecPath,
+            SevenZipPath = _settings.SevenZipPath,
+            RedumpKeysPath = _settings.RedumpKeysPath
+        };
+
+        try
+        {
+            var detectedTools = await Task.Run(() =>
+                new ToolDetectionService(detectionSettings).DetectTools());
+
+            // A settings save may have started a newer scan while this one ran.
+            if (refreshVersion != _toolStatusRefreshVersion)
+            {
+                return;
+            }
+
+            Tools.Clear();
+
+            foreach (var tool in detectedTools)
+            {
+                Tools.Add(tool);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (refreshVersion == _toolStatusRefreshVersion)
+            {
+                SettingsStatus = $"Could not check tools: {ex.Message}";
+            }
         }
     }
 
@@ -545,7 +568,7 @@ public partial class MainViewModel : ViewModelBase
 
         SelectedJob.State = JobState.Waiting;
         SelectedJob.Details = string.Empty;
-        SelectedJob.CurrentStage = string.Empty;
+        SelectedJob.Stage = JobStage.None;
         SelectedJob.Progress = 0;
         SelectedJob.TransferSpeedMbps = 0;
         SelectedJob.EtaText = string.Empty;

@@ -97,7 +97,7 @@ public sealed class JobExecutionService
                 : job.DestinationOverride;
 
         job.Progress = 0;
-        job.CurrentStage = string.Empty;
+        job.Stage = JobStage.None;
         job.EtaText = string.Empty;
         job.TransferSpeedMbps = 0;
 
