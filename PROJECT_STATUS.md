@@ -1,7 +1,7 @@
 ﻿# PS3 Butler — Project Status
 
 ## Recovery baseline
-The project was recovered from Git after an SSD failure. AGENTS.md and this file were recreated from memory; the initial status described work absent from the recovered checkout. Treat code and validation below as the current baseline. Recovered HEAD: `198ed33` (Create README.md). Recovery checkpoint: `449a5a0` (Restore safe shutdown and background queue persistence). Real-game validation checkpoint: `ff53897` (Validate real-game outputs and fix cancellation stage). Download/copy interruption checkpoint: `3c2987f` (Add download and publishing interruption coverage). Compatibility/integration checkpoint: `757572b` (Support Redrrx v3 and validate shutdown and archive workflows). SMB checkpoint: `06b0ac5` (Validate SMB delivery and interruption cleanup). Subsequent pipeline-ordering coverage is not yet committed.
+The project was recovered from Git after an SSD failure. AGENTS.md and this file were recreated from memory; the initial status described work absent from the recovered checkout. Treat code and validation below as the current baseline. Recovered HEAD: `198ed33` (Create README.md). Recovery checkpoint: `449a5a0` (Restore safe shutdown and background queue persistence). Real-game validation checkpoint: `ff53897` (Validate real-game outputs and fix cancellation stage). Download/copy interruption checkpoint: `3c2987f` (Add download and publishing interruption coverage). Compatibility/integration checkpoint: `757572b` (Support Redrrx v3 and validate shutdown and archive workflows). SMB checkpoint: `06b0ac5` (Validate SMB delivery and interruption cleanup). Scheduling/preflight checkpoint: `16d3037` (Validate scheduling and improve preflight cancellation). Subsequent typed-display/UI cleanup is not yet committed.
 
 ## Implemented PS3 workflow
 - Local ISO/ZIP/7z/RAR and HTTP/HTTPS sources.
@@ -24,12 +24,12 @@ Local ISO and SMB delivery workflows for all three output formats have now been 
 - JobStage.Cancelled and its legacy display bridge are restored.
 
 ## Architecture and typed states
-ProcessRunner, QueuePreflightCoordinator, PipelineRunCoordinator, JobExecutionService, storage/disk abstractions and run settings snapshots exist. GamePreflightService and JobExecutionService already use typed states extensively. Some legacy status/stage display assignments remain. Keep the GameJob bridge until all consumers and bindings have been reviewed and validated.
+ProcessRunner, QueuePreflightCoordinator, PipelineRunCoordinator, JobExecutionService, storage/disk abstractions and run settings snapshots exist. Runtime services and MainViewModel now use typed job state/stage assignments. The final four legacy display assignments in JobExecutionService were moved into GameJob's typed display mapping. Status/CurrentStage remain writable through the compatibility bridge and are still read by XAML bindings; keep the bridge until consumers/bindings are fully migrated and validated.
 
 ## Latest validation
 - .NET SDK 10.0.402 installed locally in ignored artifacts/dotnet because no SDK was found on PATH or at the checked standard installation locations.
-- Application build passed; two existing AVLN5001 warnings concern obsolete TextBox.Watermark properties. No build errors.
-- Recovery smoke runner: 14 checks passed for persistence, snapshots, terminal filtering, corruption, save failure/retry, shutdown ordering and cancellation. Includes a job completing while shutdown waits, which must not return as pending work after restart.
+- Application and smoke-project builds passed with zero warnings and zero errors. Replacing the two obsolete TextBox.Watermark properties with PlaceholderText removed the prior AVLN5001 warnings.
+- Recovery smoke runner: 20 checks passed for persistence, snapshots, terminal filtering, corruption, save failure/retry, shutdown ordering, cancellation, typed display labels/output-format refresh, and writable legacy bridges. Includes a job completing while shutdown waits, which must not return as pending work after restart.
 - Native Windows/Avalonia close-handler smoke runner: 3 checks passed for save failure, repeated close requests, and deferred closure.
 - The earlier claims of 26 persistence and 9 native-window tests could not be reproduced: those projects were absent from the recovered checkout.
 - Real-game tests passed using Back to the Future: The Game (BLUS30886), local Redump keys, ps3decrs and 7-Zip. All three output formats completed, duplicate detection worked for each, JB metadata/naming and optional update removal were checked, encrypted output matched the source hash, and temporary ISOs were cleaned.
@@ -43,8 +43,12 @@ ProcessRunner, QueuePreflightCoordinator, PipelineRunCoordinator, JobExecutionSe
 - SMB cleanup confirmed: only owned GUID test containers were written. Both were removed after testing and independently verified absent. Before/after top-level snapshots matched (69 PS3ISO entries, 64 GAMES entries). Local log: artifacts/smb-run.log; exact cleanup manifest: artifacts/smb/5ff801776d5a4e21b064c0cd21759181/manifest.json. No test outputs remain on those shares.
 - Pipeline-ordering runner: 22 checks passed with Redrrx v3, two local ISO jobs and two complete HTTP downloads of the real ISO, using separate per-job destinations. Observed one downloader and one processing job at maximum, actual download/processing overlap, ordered HTTP requests and processing, and identical decrypted output hashes for all four jobs. Completed jobs did not restore as pending; work files and URL local paths were cleaned. A second run cancelled while downloading, processing and waiting at the processing gate: active/gated work settled, all four inputs restored waiting, and no outputs or work files remained. Original source hash unchanged. No product changes or SMB access were needed.
 - Preflight cancellation runner: 21 checks passed, including pre-cancelled operations, cancellation during archive inspection, a real 7-Zip listing terminated through ProcessRunner, remaining-job skipping, unchanged reservations/override scope, retry-stage reset, normal initial-pipeline cancellation, and cleanup when cancelled between download completion and post-download preflight. Expanded native-window suite (23), pipeline ordering (22) and recovery suite (14) reran successfully: 80 checks across those four suites. Final build has no errors; two pre-existing Watermark deprecation warnings appear when XAML recompiles. Production SMB destinations were not accessed for this milestone.
+- Typed display/UI cleanup validation: 20 recovery/display checks and 23 full-window checks passed. The real-game suite reran all three output formats with the older decryptor, validating duplicate detection, cleanup, cancellation and source hash; the window suite used v3. New retained outputs: C:/PS3tools/ISO/ButlerSmoke-20261020-044508 and C:/PS3tools/Games/ButlerSmoke-20261020-044508. No production SMB access was needed.
 
-## Preflight cancellation milestone (uncommitted)
+## Typed display/UI cleanup milestone (uncommitted)
+JobExecutionService no longer writes Status or CurrentStage strings. GameJob derives the specific copying label from JobStage.Copying plus OutputFormat and preserves existing text: Copying ISO, Copying encrypted ISO, Copying JB folder. CreatingJbFolder retains the existing Extracting status and specific Creating JB folder stage label. Output-format changes refresh copying labels. Typed and legacy bridge directions remain supported. Two XAML placeholder properties were modernized without changing their text or bindings.
+
+## Preflight cancellation milestone
 Cancellation tokens now flow from standalone preflight and the pipeline into queue/job preflight, archive inspection, key enumeration and destination indexing. Checks between jobs/entries stop further work. Destination index caching, duplicate/title-ID checks, per-job override scope, reservations, transactional output behavior and sequential pipeline lanes are preserved.
 
 Standalone preflight owns a cancellation source, locks queue editing and concurrent pipeline starts, and responds to the existing Cancel command. Cancellation is caught as a normal stop, displays JobStage.Cancelled for an interrupted job, and leaves later jobs untouched. Retry clears the cancelled stage and works normally. The button label now reads Cancel rather than Cancel Download.
@@ -97,11 +101,11 @@ The preflight runner uses disposable fixtures under artifacts/preflight, a contr
 - Background saves are serialized without coalescing; large bursts can queue writes.
 - Settings-save and tool-scan tasks are outside the queue shutdown barrier.
 - Persistence schema/versioning and broader recovery behavior remain future work.
-- Remaining magic strings and the temporary state/stage bridge need review.
-- Two obsolete Watermark properties should become PlaceholderText in a separate UI cleanup. MainViewModel may still have extractable responsibilities.
+- The writable state/stage compatibility bridge remains for legacy display bindings; removal is deferred. No runtime service/view-model Status/CurrentStage assignments remain outside the bridge.
+- MainViewModel may still have extractable responsibilities.
 
 ## Recommended next step
-Review/checkpoint the scheduling coverage and preflight cancellation changes when requested. Next continue conservative typed-state cleanup, then address the small obsolete UI properties before release polish. Remaining network-failure scenarios should use controlled fixtures rather than disrupting production SMB. Do not assume the pre-recovery status document's validation results apply to this checkout.
+Review/checkpoint the typed display cleanup and warning-free UI update when requested. Next review release readiness and startup/recovery responsiveness, prioritizing remaining known risks over speculative refactoring. Remaining network-failure scenarios should use controlled fixtures rather than disrupting production SMB. Do not assume the pre-recovery status document's validation results apply to this checkout.
 
 ## Future work (not implemented here)
 UI/release polish, Xbox 360 support, webMAN post-run refresh, FTP delivery, persistent download resume, library indexing/UI, and possible macOS portability. Xbox and webMAN work require explicit requests. Preserve shared queue/pipeline architecture and all existing PS3 safety invariants.

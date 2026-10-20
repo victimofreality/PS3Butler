@@ -133,6 +133,21 @@ try
     Check(job.CurrentStage == "Cancelled", "typed cancellation display");
     job.CurrentStage = "Cancelled";
     Check(job.Stage == JobStage.Cancelled, "legacy cancellation bridge");
+
+    var displaying = new GameJob { State = JobState.Running, Stage = JobStage.Copying };
+    Check(displaying.Status == "Copying" && displaying.CurrentStage == "Copying ISO", "typed decrypted ISO copy preserves display labels");
+    displaying.OutputFormat = OutputFormat.EncryptedIsoWithKey;
+    Check(displaying.Stage == JobStage.Copying && displaying.Status == "Copying" && displaying.CurrentStage == "Copying encrypted ISO",
+        "output format change refreshes copying label without changing typed stage");
+    displaying.OutputFormat = OutputFormat.JbFolder;
+    Check(displaying.Stage == JobStage.Copying && displaying.CurrentStage == "Copying JB folder", "typed JB copy preserves display label");
+    displaying.Stage = JobStage.CreatingJbFolder;
+    Check(displaying.State == JobState.Running && displaying.Status == "Extracting" && displaying.CurrentStage == "Creating JB folder",
+        "typed JB extraction preserves status and specific stage label");
+    displaying.CurrentStage = "Copying ISO";
+    Check(displaying.Stage == JobStage.Copying && displaying.CurrentStage == "Copying ISO", "legacy copy stage bridge remains writable");
+    displaying.Status = "Error";
+    Check(displaying.State == JobState.Error, "legacy status bridge remains writable");
     Console.WriteLine("Recovery smoke checks passed.");
 }
 finally

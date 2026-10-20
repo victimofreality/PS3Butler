@@ -218,7 +218,6 @@ public sealed class JobExecutionService
 
                 job.Stage = JobStage.Copying;
                 job.State = JobState.Running;
-                job.CurrentStage = "Copying encrypted ISO";
                 job.Progress = 0;
                 job.TransferSpeedMbps = 0;
                 job.EtaText = string.Empty;
@@ -546,7 +545,6 @@ public sealed class JobExecutionService
             {
                 job.Stage = JobStage.Copying;
                 job.State = JobState.Running;
-                job.CurrentStage = "Copying ISO";
                 job.Progress = 0;
                 job.TransferSpeedMbps = 0;
                 job.EtaText = string.Empty;
@@ -651,8 +649,6 @@ public sealed class JobExecutionService
 
                 job.Stage = JobStage.CreatingJbFolder;
                 job.State = JobState.Running;
-                // Keep the existing status label while using the specific JB stage.
-                job.Status = "Extracting";
                 job.Progress = 0;
                 job.Details =
                     "Extracting decrypted ISO to JB folder...";
@@ -745,7 +741,6 @@ public sealed class JobExecutionService
 
                 job.Stage = JobStage.Copying;
                 job.State = JobState.Running;
-                job.CurrentStage = "Copying JB folder";
                 job.Progress = 0;
                 job.TransferSpeedMbps = 0;
                 job.EtaText = string.Empty;

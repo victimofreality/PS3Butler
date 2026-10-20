@@ -109,6 +109,14 @@ public partial class GameJob : ObservableObject
     public partial OutputFormat OutputFormat { get; set; } =
     OutputFormat.DecryptedIso;
 
+    partial void OnOutputFormatChanged(OutputFormat value)
+    {
+        if (!_isSynchronizingState && Stage == JobStage.Copying)
+        {
+            CurrentStage = GetStageText(Stage, value);
+        }
+    }
+
     partial void OnStatusChanged(
         string value)
     {
@@ -207,7 +215,8 @@ public partial class GameJob : ObservableObject
         {
             CurrentStage =
                 GetStageText(
-                    value);
+                    value,
+                    OutputFormat);
 
             if (State == JobState.Running)
             {
@@ -396,7 +405,7 @@ public partial class GameJob : ObservableObject
                         "Reading metadata",
 
                     JobStage.CreatingJbFolder =>
-                        "Creating JB folder",
+                        "Extracting",
 
                     JobStage.Copying =>
                         "Copying",
@@ -429,7 +438,8 @@ public partial class GameJob : ObservableObject
     }
 
     private static string GetStageText(
-        JobStage stage)
+        JobStage stage,
+        OutputFormat outputFormat)
     {
         return stage switch
         {
@@ -461,7 +471,13 @@ public partial class GameJob : ObservableObject
                 "Creating JB folder",
 
             JobStage.Copying =>
-                "Copying",
+                outputFormat switch
+                {
+                    OutputFormat.EncryptedIsoWithKey => "Copying encrypted ISO",
+                    OutputFormat.DecryptedIso => "Copying ISO",
+                    OutputFormat.JbFolder => "Copying JB folder",
+                    _ => "Copying"
+                },
 
             JobStage.CleaningUp =>
                 "Cleaning up",

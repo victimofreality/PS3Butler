@@ -203,7 +203,7 @@
 
 							<TextBox
 								Grid.Column="0"
-								Watermark="HTTP/HTTPS game URL"
+								PlaceholderText="HTTP/HTTPS game URL"
 								Text="{Binding UrlToAdd, Mode=TwoWay}" />
 
 							<Button
@@ -295,7 +295,7 @@
 
 												<TextBox
 													Grid.Column="0"
-													Watermark="Destination override (blank = default)"
+													PlaceholderText="Destination override (blank = default)"
 													Text="{Binding DestinationOverride, Mode=TwoWay}"
 													IsEnabled="{Binding $parent[Window].DataContext.CanEditQueue}" />
 
