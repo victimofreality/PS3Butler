@@ -14,5 +14,6 @@ public enum JobStage
     Copying,
     CleaningUp,
     Complete,
-    Error
+    Error,
+    Cancelled
 }

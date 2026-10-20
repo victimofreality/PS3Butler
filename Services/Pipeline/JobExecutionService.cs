@@ -416,7 +416,7 @@ public sealed class JobExecutionService
                 catch (OperationCanceledException)
                 {
                     job.State = JobState.Error;
-                    job.Stage = JobStage.Error;
+                    job.Stage = JobStage.Cancelled;
                     job.Details =
                         "Encrypted ISO delivery cancelled.";
                     return;

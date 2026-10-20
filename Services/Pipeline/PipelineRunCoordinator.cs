@@ -228,6 +228,9 @@ public sealed class PipelineRunCoordinator
                     job.Details =
                         downloadResult.Error;
 
+                    if (pipelineCancellationToken.IsCancellationRequested)
+                        MarkCancelled(job);
+
                     continue;
                 }
 
@@ -358,8 +361,7 @@ public sealed class PipelineRunCoordinator
         GameJob job)
     {
         job.State = JobState.Error;
-        job.Stage = JobStage.Error;
-        job.CurrentStage = "Cancelled";
+        job.Stage = JobStage.Cancelled;
         job.Details =
             "Processing cancelled.";
     }

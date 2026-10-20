@@ -3,6 +3,8 @@ using System;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
 
@@ -14,6 +16,10 @@ public sealed class QueuePersistenceCoordinator
 
     private bool _isRestoring;
     private bool _isStarted;
+    private bool _isStopped;
+    private Task _saveTask = Task.CompletedTask;
+    private Exception? _saveError;
+    private readonly HashSet<GameJob> _trackedJobs = [];
 
     public QueuePersistenceCoordinator(
         QueueStateService queueStateService,
@@ -65,33 +71,72 @@ public sealed class QueuePersistenceCoordinator
 
     private void Save()
     {
-        if (_isRestoring)
+        if (_isRestoring || _isStopped)
         {
             return;
         }
 
+        // Snapshot UI-bound objects before scheduling any background work.
+        var snapshot = QueueStateService.CreateSnapshot(_jobs);
+        var previousSave = _saveTask;
+        _saveTask = SaveAsync(previousSave, snapshot);
+    }
+
+    private async Task SaveAsync(Task previousSave, IReadOnlyList<QueueStateService.PersistedGameJob> snapshot)
+    {
+        await previousSave;
         try
         {
-            _queueStateService.Save(
-                _jobs);
+            await Task.Run(() => _queueStateService.SaveSnapshot(snapshot));
+            _saveError = null;
         }
         catch (Exception ex)
         {
+            _saveError = ex;
             _reportError?.Invoke(
                 $"Could not save queue: {ex.Message}");
         }
+    }
+
+    public async Task StopAsync()
+    {
+        // Always write a final snapshot, including on a retry after a save failure.
+        if (!_isStopped)
+        {
+            Save();
+            _isStopped = true;
+            _jobs.CollectionChanged -= Jobs_CollectionChanged;
+            foreach (var job in _trackedJobs)
+                job.PropertyChanged -= Job_PropertyChanged;
+            _trackedJobs.Clear();
+        }
+        else if (_saveError is not null)
+        {
+            _saveTask = SaveAsync(_saveTask, QueueStateService.CreateSnapshot(_jobs));
+        }
+
+        await _saveTask;
+        if (_saveError is not null)
+            throw new InvalidOperationException("Could not save queue during shutdown. Close again to retry.", _saveError);
     }
 
     private void Jobs_CollectionChanged(
         object? sender,
         NotifyCollectionChangedEventArgs e)
     {
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            foreach (var job in _trackedJobs)
+                job.PropertyChanged -= Job_PropertyChanged;
+            _trackedJobs.Clear();
+        }
         if (e.OldItems is not null)
         {
             foreach (GameJob job in e.OldItems)
             {
                 job.PropertyChanged -=
                     Job_PropertyChanged;
+                _trackedJobs.Remove(job);
             }
         }
 
@@ -101,6 +146,7 @@ public sealed class QueuePersistenceCoordinator
             {
                 job.PropertyChanged +=
                     Job_PropertyChanged;
+                _trackedJobs.Add(job);
             }
         }
 

@@ -9,6 +9,9 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        DataContext = new MainViewModel(this);
+        var viewModel = new MainViewModel(this);
+        DataContext = viewModel;
+        _ = new WindowShutdownBehavior(this, viewModel.StopAsync,
+            ex => viewModel.SettingsStatus = $"Shutdown failed: {ex.Message}");
     }
 }

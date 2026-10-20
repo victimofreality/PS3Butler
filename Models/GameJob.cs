@@ -350,11 +350,13 @@ public partial class GameJob : ObservableObject
             return JobStage.Complete;
         }
 
+        if (currentStage.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            return JobStage.Cancelled;
+        }
+
         if (currentStage.Equals(
                 "Error",
-                StringComparison.OrdinalIgnoreCase) ||
-            currentStage.Equals(
-                "Cancelled",
                 StringComparison.OrdinalIgnoreCase))
         {
             return JobStage.Error;

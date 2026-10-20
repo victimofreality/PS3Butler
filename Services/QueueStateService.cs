@@ -13,9 +13,14 @@ public sealed class QueueStateService
 
     public QueueStateService(
         SettingsService settingsService)
+        : this(settingsService.QueueFilePath)
+    {
+    }
+
+    public QueueStateService(string queueFilePath)
     {
         _queueFilePath =
-            settingsService.QueueFilePath;
+            queueFilePath;
     }
 
     public IReadOnlyList<GameJob> Load()
@@ -57,7 +62,12 @@ public sealed class QueueStateService
     public void Save(
         IEnumerable<GameJob> jobs)
     {
-        var persistedJobs =
+        SaveSnapshot(CreateSnapshot(jobs));
+    }
+
+    public static IReadOnlyList<PersistedGameJob> CreateSnapshot(IEnumerable<GameJob> jobs)
+    {
+        return
             jobs
                 .Where(job =>
                     job.State != JobState.Complete &&
@@ -78,6 +88,10 @@ public sealed class QueueStateService
                             job.DestinationOverride
                     })
                 .ToList();
+    }
+
+    public void SaveSnapshot(IReadOnlyList<PersistedGameJob> persistedJobs)
+    {
 
         var directory =
             Path.GetDirectoryName(
@@ -166,7 +180,7 @@ public sealed class QueueStateService
         };
     }
 
-    private sealed class PersistedGameJob
+    public sealed class PersistedGameJob
     {
         public string SourcePath { get; set; } =
             string.Empty;

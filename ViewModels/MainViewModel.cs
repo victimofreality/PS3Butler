@@ -30,6 +30,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly Task _startupCleanupTask;
     private CancellationTokenSource? _startupWaitCancellation;
     private int _toolStatusRefreshVersion;
+    private readonly QueueShutdownCoordinator _shutdownCoordinator;
 
     public string Greeting { get; } = "PS3 Butler";
 
@@ -72,7 +73,7 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsPipelineActive { get; set; }
 
     public bool CanEditQueue =>
-    !IsPipelineActive;
+    !IsPipelineActive && !_shutdownCoordinator.IsStopping;
 
     partial void OnIsPipelineActiveChanged(
         bool value)
@@ -123,6 +124,11 @@ public partial class MainViewModel : ViewModelBase
                 _keyIndexService,
                 _metadataCacheService,
                 _preflightCoordinator);
+
+        _shutdownCoordinator = new QueueShutdownCoordinator(
+            CancelDownload,
+            WaitForQueueOperationsAsync,
+            _queuePersistence.StopAsync);
 
 
         RedrrxPs3DecPath = _settings.RedrrxPs3DecPath;
@@ -242,6 +248,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task AddLocalGames()
     {
+        if (!CanEditQueue) return;
         var files = await _window.StorageProvider.OpenFilePickerAsync(
             new FilePickerOpenOptions
             {
@@ -266,6 +273,8 @@ public partial class MainViewModel : ViewModelBase
                 ]
             });
 
+        if (!CanEditQueue) return;
+
         foreach (var file in files)
         {
             Jobs.Add(new GameJob
@@ -284,6 +293,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void AddUrl()
     {
+        if (!CanEditQueue) return;
         var url = UrlToAdd.Trim();
 
         if (!Uri.TryCreate(
@@ -321,6 +331,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task PreflightQueue()
     {
+        if (!CanEditQueue) return;
         var reservations =
             new PreflightReservationSet();
 
@@ -346,7 +357,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ProcessReadyJobs()
     {
-        if (IsPipelineActive)
+        if (!CanEditQueue)
         {
             return;
         }
@@ -471,7 +482,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task BrowseJobDestination(GameJob? job)
     {
-        if (job is null)
+        if (job is null || !CanEditQueue)
         {
             return;
         }
@@ -484,7 +495,7 @@ public partial class MainViewModel : ViewModelBase
                     AllowMultiple = false
                 });
 
-        if (folders.Count > 0)
+        if (folders.Count > 0 && CanEditQueue)
         {
             job.DestinationOverride =
                 folders[0].Path.LocalPath;
@@ -585,6 +596,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task RetrySelectedJob()
     {
+        if (!CanEditQueue) return;
         if (SelectedJob is null)
         {
             return;
@@ -616,6 +628,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void RemoveSelectedJob()
     {
+        if (!CanEditQueue) return;
         if (SelectedJob is null)
         {
             return;
@@ -628,6 +641,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void ClearCompletedJobs()
     {
+        if (!CanEditQueue) return;
         var completedJobs = Jobs
             .Where(job =>
                 job.State == JobState.Complete ||
@@ -661,8 +675,39 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void ClearQueue()
     {
+        if (!CanEditQueue) return;
         Jobs.Clear();
         SelectedJob = null;
+    }
+
+    public Task StopAsync()
+    {
+        var stopping = _shutdownCoordinator.StopAsync();
+        OnPropertyChanged(nameof(CanEditQueue));
+        return stopping;
+    }
+
+    private async Task WaitForQueueOperationsAsync()
+    {
+        // Commands may be awaiting a picker or startup/preflight filesystem work.
+        var operations = new[]
+        {
+            AddLocalGamesCommand.ExecutionTask,
+            PreflightQueueCommand.ExecutionTask,
+            RetrySelectedJobCommand.ExecutionTask,
+            ProcessReadyJobsCommand.ExecutionTask,
+            BrowseJobDestinationCommand.ExecutionTask
+        }.Where(task => task is not null).Cast<Task>().ToArray();
+        try
+        {
+            await Task.WhenAll(operations);
+        }
+        catch (Exception ex)
+        {
+            // WhenAll has settled every operation; retain its failure for the user.
+            SettingsStatus = $"Queue operation ended during shutdown: {ex.Message}";
+        }
+        await _startupCleanupTask;
     }
 
     private static string MakeSafeFolderName(string name)
