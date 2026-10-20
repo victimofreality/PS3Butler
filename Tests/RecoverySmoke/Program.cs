@@ -3,6 +3,12 @@ using Avalonia;
 using PS3Butler.Models;
 using PS3Butler.Services;
 
+if (args.Length == 1 && args[0] == "--https")
+{
+    await HttpsDownloadSmoke.RunAsync();
+    return 0;
+}
+
 if (args.Length == 1 && args[0] == "--archive-formats")
 {
     await ArchiveFormatSmoke.RunAsync();
