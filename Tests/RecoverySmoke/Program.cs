@@ -148,6 +148,7 @@ try
     Check(displaying.Stage == JobStage.Copying && displaying.CurrentStage == "Copying ISO", "legacy copy stage bridge remains writable");
     displaying.Status = "Error";
     Check(displaying.State == JobState.Error, "legacy status bridge remains writable");
+    await PersistenceCoalescingSmoke.RunAsync(root);
     Console.WriteLine("Recovery smoke checks passed.");
 }
 finally

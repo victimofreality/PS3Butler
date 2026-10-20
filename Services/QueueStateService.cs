@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace PS3Butler.Services;
 
-public sealed class QueueStateService
+public sealed class QueueStateService : IQueueStateStore
 {
     private readonly string _queueFilePath;
 

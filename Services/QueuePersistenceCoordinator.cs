@@ -10,7 +10,7 @@ namespace PS3Butler.Services;
 
 public sealed class QueuePersistenceCoordinator
 {
-    private readonly QueueStateService _queueStateService;
+    private readonly IQueueStateStore _queueStateService;
     private readonly ObservableCollection<GameJob> _jobs;
     private readonly Action<string>? _reportError;
 
@@ -20,9 +20,12 @@ public sealed class QueuePersistenceCoordinator
     private Task _saveTask = Task.CompletedTask;
     private Exception? _saveError;
     private readonly HashSet<GameJob> _trackedJobs = [];
+    private readonly object _saveGate = new();
+    private IReadOnlyList<QueueStateService.PersistedGameJob>? _pendingSnapshot;
+    private bool _isWriterRunning;
 
     public QueuePersistenceCoordinator(
-        QueueStateService queueStateService,
+        IQueueStateStore queueStateService,
         ObservableCollection<GameJob> jobs,
         Action<string>? reportError = null)
     {
@@ -78,23 +81,60 @@ public sealed class QueuePersistenceCoordinator
 
         // Snapshot UI-bound objects before scheduling any background work.
         var snapshot = QueueStateService.CreateSnapshot(_jobs);
-        var previousSave = _saveTask;
-        _saveTask = SaveAsync(previousSave, snapshot);
+        QueueSnapshot(snapshot);
     }
 
-    private async Task SaveAsync(Task previousSave, IReadOnlyList<QueueStateService.PersistedGameJob> snapshot)
+    private void QueueSnapshot(IReadOnlyList<QueueStateService.PersistedGameJob> snapshot)
     {
-        await previousSave;
+        lock (_saveGate)
+        {
+            // Intermediate edits do not need separate disk writes. Retain at
+            // most the active snapshot and the latest UI-thread snapshot.
+            _pendingSnapshot = snapshot;
+            if (!_isWriterRunning)
+            {
+                _isWriterRunning = true;
+                _saveTask = SavePendingAsync();
+            }
+        }
+    }
+
+    private async Task SavePendingAsync()
+    {
         try
         {
-            await Task.Run(() => _queueStateService.SaveSnapshot(snapshot));
-            _saveError = null;
+            while (true)
+            {
+                IReadOnlyList<QueueStateService.PersistedGameJob> snapshot;
+                lock (_saveGate)
+                {
+                    if (_pendingSnapshot is null)
+                    {
+                        _isWriterRunning = false;
+                        return;
+                    }
+                    snapshot = _pendingSnapshot;
+                    _pendingSnapshot = null;
+                }
+
+                try
+                {
+                    await Task.Run(() => _queueStateService.SaveSnapshot(snapshot));
+                    _saveError = null;
+                }
+                catch (Exception ex)
+                {
+                    _saveError = ex;
+                    _reportError?.Invoke($"Could not save queue: {ex.Message}");
+                }
+            }
         }
-        catch (Exception ex)
+        catch
         {
-            _saveError = ex;
-            _reportError?.Invoke(
-                $"Could not save queue: {ex.Message}");
+            // A throwing error reporter must not leave the writer permanently
+            // marked active. The fault remains observable during shutdown.
+            lock (_saveGate) _isWriterRunning = false;
+            throw;
         }
     }
 
@@ -112,7 +152,7 @@ public sealed class QueuePersistenceCoordinator
         }
         else if (_saveError is not null)
         {
-            _saveTask = SaveAsync(_saveTask, QueueStateService.CreateSnapshot(_jobs));
+            QueueSnapshot(QueueStateService.CreateSnapshot(_jobs));
         }
 
         await _saveTask;
