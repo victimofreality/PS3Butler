@@ -490,7 +490,7 @@ public sealed class JobExecutionService
             job.State = JobState.Running;
             job.Progress = 0;
             job.Details =
-                "Decrypting ISO with ps3decrs...";
+                "Decrypting ISO with Redrrx PS3Dec...";
 
             var decryptProgress =
                 new Progress<double>(value =>

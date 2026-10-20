@@ -44,7 +44,7 @@ public class Ps3DecService
             return (
                 false,
                 string.Empty,
-                "ps3decrs executable not found.");
+                "Redrrx PS3Dec executable not found (ps3dec.exe or ps3decrs.exe).");
         }
 
         if (!File.Exists(inputIsoPath))
@@ -67,10 +67,12 @@ public class Ps3DecService
                 outputDirectory,
                 outputName + ".iso");
 
-        if (File.Exists(expectedOutputPath))
+        // Butler starts fresh rather than retaining decryptor recovery state.
+        // v3 adds these sidecars; older Redrrx builds only write the ISO.
+        foreach (var path in new[] { expectedOutputPath, expectedOutputPath + ".part", expectedOutputPath + ".resume" })
         {
-            File.Delete(
-                expectedOutputPath);
+            if (File.Exists(path))
+                File.Delete(path);
         }
 
         var inputSize =
@@ -116,20 +118,24 @@ public class Ps3DecService
                 cancellationToken);
 
         /*
-         * ps3decrs does not currently give us convenient structured
+         * Redrrx PS3Dec does not currently give us convenient structured
          * percentage progress, so preserve the existing behaviour:
          * poll the output file size while the process is running.
          */
         while (!processTask.IsCompleted)
         {
-            if (File.Exists(expectedOutputPath) &&
+            var progressPath = File.Exists(expectedOutputPath + ".part")
+                ? expectedOutputPath + ".part"
+                : expectedOutputPath;
+
+            if (File.Exists(progressPath) &&
                 inputSize > 0)
             {
                 try
                 {
                     var outputSize =
                         new FileInfo(
-                            expectedOutputPath).Length;
+                            progressPath).Length;
 
                     var percentage =
                         outputSize *
@@ -146,7 +152,7 @@ public class Ps3DecService
                 {
                     /*
                      * The file may briefly be unavailable while
-                     * ps3decrs is writing to it. Try again on the
+                     * the decryptor is writing to it. Try again on the
                      * next poll.
                      */
                 }
@@ -194,18 +200,22 @@ public class Ps3DecService
             return (
                 false,
                 string.Empty,
-                $"ps3decrs exited with code {result.ExitCode}: " +
+                $"Redrrx PS3Dec exited with code {result.ExitCode}: " +
                 $"{error.Trim()}");
         }
 
         if (!File.Exists(expectedOutputPath))
         {
+            DeletePartialOutput(expectedOutputPath);
             return (
                 false,
                 string.Empty,
                 $"Decryption completed but expected output was not found: " +
                 $"{expectedOutputPath}");
         }
+
+        // v3 keeps a checkpoint after success. Butler owns the work lifecycle.
+        TryDeleteFile(expectedOutputPath + ".resume");
 
         progress?.Report(
             100);
@@ -219,12 +229,20 @@ public class Ps3DecService
     private static void DeletePartialOutput(
         string outputPath)
     {
+        foreach (var path in new[] { outputPath, outputPath + ".part", outputPath + ".resume" })
+        {
+            TryDeleteFile(path);
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
         try
         {
-            if (File.Exists(outputPath))
+            if (File.Exists(path))
             {
                 File.Delete(
-                    outputPath);
+                    path);
             }
         }
         catch

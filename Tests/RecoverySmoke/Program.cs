@@ -3,6 +3,25 @@ using Avalonia;
 using PS3Butler.Models;
 using PS3Butler.Services;
 
+if ((args.Length == 2 || args.Length == 3) && args[0] == "--archive")
+{
+    await ArchiveFolderSmoke.RunAsync(args[1], args.Length == 3 ? args[2] : null);
+    return 0;
+}
+
+if ((args.Length == 2 || args.Length == 3) && args[0] == "--window")
+{
+    MainWindowSmoke.Prepare(args[1], args.Length == 3 ? args[2] : null);
+    return Avalonia.AppBuilder.Configure<MainWindowSmoke>().UsePlatformDetect()
+        .StartWithClassicDesktopLifetime([]);
+}
+
+if (args.Length == 3 && args[0] == "--tools")
+{
+    await ToolCompatibilitySmoke.RunAsync(args[1], args[2]);
+    return 0;
+}
+
 if (args.Contains("--native"))
 {
     return Avalonia.AppBuilder.Configure<NativeShutdownSmoke>().UsePlatformDetect()

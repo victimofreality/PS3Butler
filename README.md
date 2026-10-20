@@ -12,7 +12,7 @@ Drop in a game, pick an output format, and let the butler deal with the boring s
 - Direct HTTP/HTTPS downloads
 - Automatic Redump `.dkey` lookup
 - Supports text and binary Redump keys
-- PS3 ISO decryption using `ps3decrs`
+- PS3 ISO decryption using Redrrx PS3Dec (`ps3dec.exe` for v3+, or older `ps3decrs.exe` builds)
 - Archive inspection and extraction using 7-Zip
 - Output as:
   - Decrypted ISO
@@ -90,7 +90,7 @@ You will need:
 
 - .NET 10
 - 7-Zip
-- `ps3decrs`
+- Redrrx PS3Dec (`ps3dec.exe` for v3+, or `ps3decrs.exe` for older builds)
 - Redump `.dkey` files for encrypted PS3 images
 
 Paths to external tools and destinations can be configured in the application.

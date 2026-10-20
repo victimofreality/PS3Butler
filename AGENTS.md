@@ -56,7 +56,7 @@ Preserve shutdown ordering:
 Do not silently discard queue-save failures during shutdown.
 
 ## PS3 rules
-Supported decryptor is `ps3decrs`. Do not reintroduce Classic `PS3Dec.exe` unless explicitly requested.
+Supported decryptor is Redrrx PS3Dec: `ps3decrs.exe` for older builds and `ps3dec.exe` for v3+. The filename alone does not identify Classic PS3Dec; do not reintroduce its different CLI unless explicitly requested.
 
 Redump `.dkey` supports:
 - 32-character hex text

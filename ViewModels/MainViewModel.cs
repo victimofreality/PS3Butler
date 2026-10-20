@@ -237,7 +237,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task BrowseRedrrxPs3Dec()
     {
-        var path = await PickExecutableAsync("Select ps3decrs.exe");
+        var path = await PickExecutableAsync("Select Redrrx ps3dec.exe or ps3decrs.exe");
 
         if (path is not null)
         {
