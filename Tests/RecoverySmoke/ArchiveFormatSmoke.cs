@@ -4,7 +4,7 @@ using PS3Butler.Services.Execution;
 
 internal static class ArchiveFormatSmoke
 {
-    public static async Task RunAsync()
+    public static async Task RunAsync(bool includeRar = false)
     {
         const string sevenZip = @"C:\Program Files\7-Zip\7z.exe";
         var root = Path.GetFullPath(Path.Combine("artifacts", "archive-formats", Guid.NewGuid().ToString("N")));
@@ -44,6 +44,38 @@ internal static class ArchiveFormatSmoke
             Check(result.Success && Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(result.IsoPath))) == expectedHash,
                 $"{name}: extracted bytes match source");
             Check(File.Exists(Path.Combine(Path.GetDirectoryName(result.IsoPath)!, "readme.txt")), $"{name}: companion file and nested layout preserved");
+        }
+
+        if (includeRar)
+        {
+            const string rar = @"C:\Program Files\WinRAR\Rar.exe";
+            if (!File.Exists(rar)) throw new FileNotFoundException("RAR fixture generation requires installed WinRAR.", rar);
+            foreach (var solid in new[] { false, true })
+            {
+                var name = solid ? "rar-solid" : "rar-normal";
+                var archive = Path.Combine(root, name + ".rar");
+                var packed = await new ProcessRunner().RunAsync(new ProcessRunRequest
+                {
+                    FileName = rar,
+                    WorkingDirectory = Path.Combine(root, "input"),
+                    ArgumentList = new[] { "a", "-cfg-", "-m3", "-md16m", "-mt2", solid ? "-s" : "-s-", "-r", archive, "*" },
+                    Timeout = TimeSpan.FromSeconds(30)
+                });
+                Check(packed.Success, $"{name}: fixture created ({packed.StandardError})");
+                Check(new FileInfo(archive).Length < payload.Length, $"{name}: fixture is compressed");
+                Check(await inspection.FindIsoNameAsync(archive) == Path.GetFileName(source), $"{name}: nested Unicode ISO inspected");
+                var result = await extraction.ExtractIsoAsync(archive, Path.Combine(root, name + " output"));
+                Check(result.Success, $"{name}: production 7-Zip extraction succeeds ({result.Error})");
+                Check(Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(result.IsoPath))) == expectedHash,
+                    $"{name}: extracted ISO bytes match");
+                Check(File.Exists(Path.Combine(Path.GetDirectoryName(result.IsoPath)!, "readme.txt")), $"{name}: nested companion file preserved");
+
+                var damaged = Path.Combine(root, name + "-damaged.rar");
+                var bytes = await File.ReadAllBytesAsync(archive);
+                await File.WriteAllBytesAsync(damaged, bytes.AsSpan(0, bytes.Length / 2).ToArray());
+                var damagedResult = await extraction.ExtractIsoAsync(damaged, Path.Combine(root, name + " damaged-output"));
+                Check(!damagedResult.Success && damagedResult.Error.Contains("7-Zip exited with code"), $"{name}: truncated RAR fails instead of reporting success");
+            }
         }
 
         var invalidInput = Path.Combine(root, "invalid-input");
