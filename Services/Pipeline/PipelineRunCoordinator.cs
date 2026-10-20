@@ -355,6 +355,16 @@ public sealed class PipelineRunCoordinator
         await jobExecutionService.ProcessAsync(
             job,
             cancellationToken);
+
+        // Tool/storage services can return a failed result instead of throwing
+        // when cancelled. Preserve completed outputs, but show cancellation for
+        // unfinished jobs regardless of how the service reported it.
+        if (cancellationToken.IsCancellationRequested &&
+            job.State != JobState.Complete &&
+            job.State != JobState.AlreadyExists)
+        {
+            MarkCancelled(job);
+        }
     }
 
     private static void MarkCancelled(
