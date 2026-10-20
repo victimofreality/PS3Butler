@@ -95,6 +95,14 @@ You will need:
 
 Paths to external tools and destinations can be configured in the application.
 
+## Build a portable Windows preview
+
+From PowerShell at the repository root, run `./scripts/Package-Windows.ps1`.
+The script uses the SDK under `artifacts/dotnet` when present, otherwise the SDK on PATH; an SDK can also be selected with `-DotNetPath`.
+It publishes a self-contained Windows x64 Release build and creates a fresh ZIP plus SHA-256 checksum under `artifacts/packages`.
+The package includes the .NET runtime, portable-mode marker and [setup guide](docs/PORTABLE.md); external tools, keys, games and saved user data are not bundled.
+Building from source requires the .NET 10 SDK. Runtime packages may need downloading during publishing.
+
 ## Current status
 
 PS3 Butler is under active development.

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using PS3Butler.Configuration;
 using PS3Butler.Models;
 using PS3Butler.Services;
@@ -72,6 +73,7 @@ public sealed class MainWindowSmoke : Application
         var viewModel = (MainViewModel)window.DataContext!;
         Require(viewModel.Jobs.Count == 1 && viewModel.Jobs[0].State == JobState.Waiting, "real window restores pending queue");
         Require(viewModel.SettingsMode == "Portable" && viewModel.WorkDirectory == _root, "real window uses isolated settings");
+        await CheckQueueEditingAsync(window, viewModel);
         await viewModel.SaveSettingsCommand.ExecuteAsync(null);
         Require(viewModel.SettingsStatus == "Settings saved." && new SettingsService().Load().RedrrxPs3DecPath == viewModel.RedrrxPs3DecPath,
             "settings validation accepts and preserves selected Redrrx binary");
@@ -225,6 +227,47 @@ public sealed class MainWindowSmoke : Application
         var window = CreateWindow();
         await ((MainViewModel)window.DataContext!).QueueInitializationTask;
         return window;
+    }
+
+    private static async Task CheckQueueEditingAsync(MainWindow window, MainViewModel viewModel)
+    {
+        var urlBox = window.GetVisualDescendants().OfType<TextBox>()
+            .Single(control => control.PlaceholderText == "HTTP/HTTPS game URL");
+        var addButton = window.GetVisualDescendants().OfType<Button>()
+            .Single(control => Equals(control.Content, "Add URL"));
+        var initialCount = viewModel.Jobs.Count;
+        urlBox.Text = "not a URL";
+        addButton.Command!.Execute(addButton.CommandParameter);
+        Require(viewModel.Jobs.Count == initialCount && viewModel.SettingsStatus == "Invalid URL.", "bound URL controls reject invalid input");
+        urlBox.Text = "ftp://example.invalid/game.iso";
+        addButton.Command.Execute(addButton.CommandParameter);
+        Require(viewModel.Jobs.Count == initialCount && viewModel.SettingsStatus.Contains("Only HTTP and HTTPS"), "bound URL controls reject unsupported scheme");
+        urlBox.Text = "  https://example.invalid/game.iso  ";
+        addButton.Command.Execute(addButton.CommandParameter);
+        var added = viewModel.Jobs.Last();
+        Require(viewModel.Jobs.Count == initialCount + 1 && added.SourcePath == "https://example.invalid/game.iso" &&
+            added.SourceType == GameSourceType.Url && string.IsNullOrEmpty(urlBox.Text), "bound URL controls add trimmed input and clear entry");
+        viewModel.SelectedJob = added;
+        viewModel.RemoveSelectedJobCommand.Execute(null);
+        Require(viewModel.Jobs.Count == initialCount && viewModel.SelectedJob is null, "remove selected preserves other queue inputs");
+        var savedWork = viewModel.WorkDirectory;
+        viewModel.WorkDirectory = "";
+        await viewModel.SaveSettingsCommand.ExecuteAsync(null);
+        Require(viewModel.SettingsStatus.Contains("Work directory cannot be empty") && new SettingsService().Load().WorkDirectory == savedWork,
+            "invalid settings show reason and preserve saved settings");
+        viewModel.WorkDirectory = savedWork;
+        window.Width = window.MinWidth;
+        window.Height = window.MinHeight;
+        await WaitUntilAsync(() => window.ClientSize.Width <= window.MinWidth + 1);
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        foreach (var label in new[] { "Cancel", "Clear Queue" })
+        {
+            var button = window.GetVisualDescendants().OfType<Button>().Single(control => Equals(control.Content, label));
+            var position = button.TranslatePoint(new Point(button.Bounds.Width, 0), window);
+            Require(position.HasValue && position.Value.X <= window.ClientSize.Width, $"{label} stays within minimum-width window");
+        }
+        window.Width = 1000;
+        window.Height = 750;
     }
 
     private static MainWindow CreateWindow(IQueueStateStore? queueStateStore = null)
