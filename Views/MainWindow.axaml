@@ -24,6 +24,8 @@
                 FontSize="32"
                 FontWeight="Bold" />
 
+            <TextBlock Text="{Binding BuildIdentity}" TextWrapping="Wrap" FontSize="12" />
+
 			<Border
                 Padding="18"
                 BorderThickness="1"

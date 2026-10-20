@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using System.Threading;
 
@@ -34,6 +35,10 @@ public partial class MainViewModel : ViewModelBase
     private readonly QueueShutdownCoordinator _shutdownCoordinator;
 
     public string Greeting { get; } = "PS3 Butler";
+
+    public string BuildIdentity { get; } =
+        typeof(MainViewModel).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? "Unknown build";
 
     public ObservableCollection<ToolStatus> Tools { get; } = [];
     public ObservableCollection<GameJob> Jobs { get; } = [];
