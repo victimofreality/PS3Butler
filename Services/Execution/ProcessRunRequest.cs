@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace PS3Butler.Services.Execution;
 
@@ -16,6 +17,8 @@ public sealed class ProcessRunRequest
     public bool RedirectStandardOutput { get; init; } = true;
 
     public bool RedirectStandardError { get; init; } = true;
+
+    public Encoding? StandardOutputEncoding { get; init; }
 
     public TimeSpan? Timeout { get; init; }
 

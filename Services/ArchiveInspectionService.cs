@@ -2,6 +2,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -47,8 +48,8 @@ public class ArchiveInspectionService
             new ProcessRunRequest
             {
                 FileName = _sevenZipPath,
-                Arguments =
-                    $"l -slt \"{archivePath}\"",
+                ArgumentList = new[] { "l", "-slt", "-sccUTF-8", archivePath },
+                StandardOutputEncoding = Encoding.UTF8,
                 Timeout =
                     TimeSpan.FromSeconds(30)
             };

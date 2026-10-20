@@ -3,6 +3,18 @@ using Avalonia;
 using PS3Butler.Models;
 using PS3Butler.Services;
 
+if (args.Length == 1 && args[0] == "--archive-formats")
+{
+    await ArchiveFormatSmoke.RunAsync();
+    return 0;
+}
+
+if (args.Length == 1 && args[0] == "--download-failures")
+{
+    await DownloadFailureSmoke.RunAsync();
+    return 0;
+}
+
 if (args.Length == 1 && args[0] == "--preflight")
 {
     await PreflightCancellationSmoke.RunAsync();
