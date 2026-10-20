@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 namespace PS3Butler.Services;
 
@@ -22,7 +23,8 @@ public sealed class DestinationLibraryIndex
 
     public DestinationLibraryIndex(
         string destinationDirectory,
-        ParamSfoService paramSfoService)
+        ParamSfoService paramSfoService,
+        CancellationToken cancellationToken = default)
     {
         DestinationDirectory =
             destinationDirectory;
@@ -30,7 +32,7 @@ public sealed class DestinationLibraryIndex
         _paramSfoService =
             paramSfoService;
 
-        Build();
+        Build(cancellationToken);
     }
 
     public string? FindExistingGame(
@@ -99,8 +101,9 @@ public sealed class DestinationLibraryIndex
                 : null;
     }
 
-    private void Build()
+    private void Build(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(
                 DestinationDirectory))
         {
@@ -113,11 +116,12 @@ public sealed class DestinationLibraryIndex
             return;
         }
 
-        ScanIsoFiles();
-        ScanJbFolders();
+        ScanIsoFiles(cancellationToken);
+        ScanJbFolders(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private void ScanIsoFiles()
+    private void ScanIsoFiles(CancellationToken cancellationToken)
     {
         foreach (var path in
                  Directory.EnumerateFiles(
@@ -125,6 +129,7 @@ public sealed class DestinationLibraryIndex
                      "*.iso",
                      SearchOption.TopDirectoryOnly))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var fileName =
                 Path.GetFileName(path);
 
@@ -154,7 +159,7 @@ public sealed class DestinationLibraryIndex
         }
     }
 
-    private void ScanJbFolders()
+    private void ScanJbFolders(CancellationToken cancellationToken)
     {
         foreach (var directory in
                  Directory.EnumerateDirectories(
@@ -162,6 +167,7 @@ public sealed class DestinationLibraryIndex
                      "*",
                      SearchOption.TopDirectoryOnly))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var folderName =
                 Path.GetFileName(
                     directory);

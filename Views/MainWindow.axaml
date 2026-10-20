@@ -192,7 +192,7 @@
 								Command="{Binding ResumeDownloadCommand}" />
 							
 							<Button
-								Content="Cancel Download"
+								Content="Cancel"
 								Command="{Binding CancelDownloadCommand}" />
 
 						</StackPanel>

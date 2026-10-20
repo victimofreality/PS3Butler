@@ -66,7 +66,8 @@ public sealed class PipelineRunCoordinator
                 runSettings.SevenZipPath,
                 runSettings.IsoDestinationPath,
                 runSettings.JbDestinationPath,
-                preflightReservations);
+                preflightReservations,
+                pipelineCancellationToken);
 
             var queuedJobs =
                 jobs.ToList();
@@ -245,8 +246,15 @@ public sealed class PipelineRunCoordinator
                 job.Details =
                     "Download complete. Preflighting...";
 
-                await preflightService.PreflightAsync(
-                    job);
+                try
+                {
+                    await preflightService.PreflightAsync(job, pipelineCancellationToken);
+                }
+                catch (OperationCanceledException) when (pipelineCancellationToken.IsCancellationRequested)
+                {
+                    MarkCancelled(job);
+                    throw;
+                }
 
                 if (job.State == JobState.Ready)
                 {
@@ -264,6 +272,11 @@ public sealed class PipelineRunCoordinator
                 }
             }
 
+        }
+        catch (OperationCanceledException) when (pipelineCancellationToken.IsCancellationRequested)
+        {
+            // Preflight cancellation is a normal stop; finally still settles
+            // all processing before cleaning downloaded inputs and tokens.
         }
         catch
         {
@@ -291,6 +304,12 @@ public sealed class PipelineRunCoordinator
             }
             finally
             {
+                foreach (var job in jobs.Where(job => job.SourceType == GameSourceType.Url && job.LocalSourcePath is not null))
+                {
+                    TemporaryDownloadCleanupService.CleanupFile(job.LocalSourcePath, runSettings.WorkDirectory);
+                    job.LocalSourcePath = null;
+                }
+
                 _downloadCancellationTokenSource?.Dispose();
                 _downloadCancellationTokenSource = null;
                 _downloadPauseTokenSource = null;

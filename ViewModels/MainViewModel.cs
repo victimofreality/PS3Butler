@@ -29,6 +29,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly PipelineRunCoordinator _pipelineRunCoordinator;
     private readonly Task _startupCleanupTask;
     private CancellationTokenSource? _startupWaitCancellation;
+    private CancellationTokenSource? _preflightCancellation;
     private int _toolStatusRefreshVersion;
     private readonly QueueShutdownCoordinator _shutdownCoordinator;
 
@@ -73,7 +74,7 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsPipelineActive { get; set; }
 
     public bool CanEditQueue =>
-    !IsPipelineActive && !_shutdownCoordinator.IsStopping;
+    !IsPipelineActive && _preflightCancellation is null && !_shutdownCoordinator.IsStopping;
 
     partial void OnIsPipelineActiveChanged(
         bool value)
@@ -332,17 +333,33 @@ public partial class MainViewModel : ViewModelBase
     private async Task PreflightQueue()
     {
         if (!CanEditQueue) return;
+        using var cancellation = new CancellationTokenSource();
+        _preflightCancellation = cancellation;
+        OnPropertyChanged(nameof(CanEditQueue));
         var reservations =
             new PreflightReservationSet();
 
-        await PreflightQueueWithReservations(
-            reservations);
+        try
+        {
+            await PreflightQueueWithReservations(reservations, cancellation.Token);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            SettingsStatus = "Preflight cancelled.";
+        }
+        finally
+        {
+            _preflightCancellation = null;
+            OnPropertyChanged(nameof(CanEditQueue));
+        }
     }
 
     private async Task PreflightQueueWithReservations(
-        PreflightReservationSet reservations)
+        PreflightReservationSet reservations,
+        CancellationToken cancellationToken)
     {
-        await _startupCleanupTask;
+        await _startupCleanupTask.WaitAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
         await _preflightCoordinator.PreflightQueueAsync(
             Jobs,
@@ -351,7 +368,8 @@ public partial class MainViewModel : ViewModelBase
             SevenZipPath,
             IsoDestinationPath,
             JbDestinationPath,
-            reservations);
+            reservations,
+            cancellationToken);
     }
 
     [RelayCommand]
@@ -668,6 +686,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void CancelDownload()
     {
+        _preflightCancellation?.Cancel();
         _startupWaitCancellation?.Cancel();
         _pipelineRunCoordinator.Cancel();
     }

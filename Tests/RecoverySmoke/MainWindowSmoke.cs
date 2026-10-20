@@ -106,6 +106,61 @@ public sealed class MainWindowSmoke : Application
         await restoredClosed.WaitAsync(TimeSpan.FromSeconds(10));
         Require(restoredClosed.IsCompleted, "idle restored window closes after flush");
 
+        var preflightWindow = CreateWindow();
+        var preflightViewModel = (MainViewModel)preflightWindow.DataContext!;
+        var firstPreflight = preflightViewModel.Jobs[0];
+        var untouched = new GameJob { SourcePath = _source, Details = "untouched" };
+        preflightViewModel.Jobs.Add(untouched);
+        System.ComponentModel.PropertyChangedEventHandler cancelPreflight = (_, e) =>
+        {
+            if (e.PropertyName == nameof(GameJob.State) && firstPreflight.State == JobState.Ready)
+                preflightViewModel.CancelDownloadCommand.Execute(null);
+        };
+        firstPreflight.PropertyChanged += cancelPreflight;
+        var inspecting = preflightViewModel.PreflightQueueCommand.ExecuteAsync(null);
+        Require(!preflightViewModel.CanEditQueue, "standalone preflight locks queue");
+        preflightViewModel.UrlToAdd = "https://example.invalid/blocked.iso";
+        preflightViewModel.AddUrlCommand.Execute(null);
+        await preflightViewModel.ProcessReadyJobsCommand.ExecuteAsync(null);
+        Require(preflightViewModel.Jobs.Count == 2 && !preflightViewModel.IsPipelineActive, "preflight blocks queue additions and concurrent pipeline start");
+        await inspecting.WaitAsync(TimeSpan.FromSeconds(10));
+        firstPreflight.PropertyChanged -= cancelPreflight;
+        Require(preflightViewModel.SettingsStatus == "Preflight cancelled." && preflightViewModel.CanEditQueue,
+            "standalone cancellation reports status and unlocks queue after settling");
+        Require(firstPreflight.Stage == JobStage.Cancelled && untouched.State == JobState.Waiting && untouched.Details == "untouched",
+            "standalone cancellation skips remaining queue jobs");
+        preflightViewModel.SelectedJob = firstPreflight;
+        await preflightViewModel.RetrySelectedJobCommand.ExecuteAsync(null);
+        Require(firstPreflight.State == JobState.Ready && untouched.State == JobState.AlreadyExists,
+            "preflight retry succeeds and preserves duplicate reservations");
+        var preflightClosed = ClosedTask(preflightWindow);
+        preflightWindow.Close();
+        await preflightClosed.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var archivePath = Path.Combine(_root, "inspection.zip");
+        using (var archive = System.IO.Compression.ZipFile.Open(archivePath, System.IO.Compression.ZipArchiveMode.Create))
+            archive.CreateEntry(Path.GetFileName(_source));
+        var closingPreflightWindow = CreateWindow();
+        var closingPreflight = (MainViewModel)closingPreflightWindow.DataContext!;
+        closingPreflight.Jobs.Clear();
+        var archiveJob = new GameJob { SourcePath = archivePath };
+        var laterJob = new GameJob { SourcePath = _source, Details = "untouched" };
+        closingPreflight.Jobs.Add(archiveJob);
+        closingPreflight.Jobs.Add(laterJob);
+        var inspectionClosed = ClosedTask(closingPreflightWindow);
+        archiveJob.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(GameJob.Stage) && archiveJob.Stage == JobStage.InspectingArchive)
+                closingPreflightWindow.Close();
+        };
+        await closingPreflight.PreflightQueueCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(10));
+        await inspectionClosed.WaitAsync(TimeSpan.FromSeconds(10));
+        Require(archiveJob.Stage == JobStage.Cancelled && laterJob.Details == "untouched", "window close cancels archive preflight before remaining jobs");
+        Require(!closingPreflight.CanEditQueue && store.Load().Count == 2 && store.Load().All(job => job.State == JobState.Waiting),
+            "window close waits for preflight then flushes both queue inputs");
+        // Restore the single-input fixture for the existing save-failure test.
+        store.Save(new[] { new GameJob { SourcePath = _source } });
+
         var failureWindow = CreateWindow();
         var failureViewModel = (MainViewModel)failureWindow.DataContext!;
         var failureClosed = ClosedTask(failureWindow);

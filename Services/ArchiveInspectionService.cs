@@ -32,6 +32,7 @@ public class ArchiveInspectionService
         string archivePath,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!File.Exists(_sevenZipPath))
         {
             return null;
@@ -56,6 +57,8 @@ public class ArchiveInspectionService
             await _processRunner.RunAsync(
                 request,
                 cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!result.Success)
         {

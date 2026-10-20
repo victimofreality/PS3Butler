@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 
 namespace PS3Butler.Services;
 
@@ -12,11 +13,13 @@ public class DestinationInspectionService
         new();
 
     public DestinationLibraryIndex CreateIndex(
-        string destinationDirectory)
+        string destinationDirectory,
+        CancellationToken cancellationToken = default)
     {
         return new DestinationLibraryIndex(
             destinationDirectory,
-            _paramSfoService);
+            _paramSfoService,
+            cancellationToken);
     }
 
     public List<ExistingGame> ScanJbGames(

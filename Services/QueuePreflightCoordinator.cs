@@ -1,5 +1,6 @@
 using PS3Butler.Models;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
@@ -47,8 +48,10 @@ public sealed class QueuePreflightCoordinator
         string sevenZipPath,
         string isoDestinationPath,
         string jbDestinationPath,
-        PreflightReservationSet reservations)
+        PreflightReservationSet reservations,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         /*
          * The key directory can contain thousands of files. Enumerating it is
          * synchronous filesystem work, so do it away from the Avalonia UI
@@ -56,7 +59,10 @@ public sealed class QueuePreflightCoordinator
          */
         await Task.Run(() =>
             keyIndexService.Build(
-                redumpKeysPath));
+                redumpKeysPath,
+                cancellationToken), cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         var preflightService =
             CreateService(
@@ -69,13 +75,15 @@ public sealed class QueuePreflightCoordinator
 
         foreach (var job in jobs)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (job.State == JobState.Complete)
             {
                 continue;
             }
 
             await preflightService.PreflightAsync(
-                job);
+                job,
+                cancellationToken);
         }
     }
 }

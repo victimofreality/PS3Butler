@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 namespace PS3Butler.Services;
 
@@ -11,8 +12,9 @@ public class KeyIndexService
 
     public int Count => _keys.Count;
 
-    public void Build(string keyDirectory)
+    public void Build(string keyDirectory, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _keys.Clear();
 
         if (!Directory.Exists(keyDirectory))
@@ -25,6 +27,7 @@ public class KeyIndexService
                      "*.dkey",
                      SearchOption.TopDirectoryOnly))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var name = Path.GetFileNameWithoutExtension(path);
 
             if (!string.IsNullOrWhiteSpace(name))

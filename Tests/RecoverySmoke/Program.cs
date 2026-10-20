@@ -3,6 +3,18 @@ using Avalonia;
 using PS3Butler.Models;
 using PS3Butler.Services;
 
+if (args.Length == 1 && args[0] == "--preflight")
+{
+    await PreflightCancellationSmoke.RunAsync();
+    return 0;
+}
+
+if ((args.Length == 2 || args.Length == 3) && args[0] == "--ordering")
+{
+    await PipelineOrderingSmoke.RunAsync(args[1], args.Length == 3 ? args[2] : null);
+    return 0;
+}
+
 if ((args.Length == 4 || args.Length == 5) && args[0] == "--smb")
 {
     await SmbSmoke.RunAsync(args[1], args[2], args[3], args.Length == 5 ? args[4] : null);

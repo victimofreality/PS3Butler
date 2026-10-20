@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PS3Butler.Services;
@@ -72,12 +73,30 @@ public class GamePreflightService
         _reservations = reservations;
     }
 
-    public async Task PreflightAsync(GameJob job)
+    public async Task PreflightAsync(GameJob job, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            await PreflightCoreAsync(job, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            job.State = JobState.Error;
+            job.Stage = JobStage.Cancelled;
+            job.Details = "Preflight cancelled.";
+            throw;
+        }
+    }
+
+    private async Task PreflightCoreAsync(GameJob job, CancellationToken cancellationToken)
     {
         job.KeyPath = null;
         job.DetectedIsoName = null;
         job.DiscKey = null;
         job.Details = string.Empty;
+        job.Stage = JobStage.None;
 
         if (job.SourceType == GameSourceType.Url &&
             string.IsNullOrWhiteSpace(job.LocalSourcePath))
@@ -122,12 +141,12 @@ public class GamePreflightService
         else
         {
             job.State = JobState.Running;
-            // Preserve the existing display text until stage reporting is migrated.
-            job.Status = "Inspecting archive";
+            job.Stage = JobStage.InspectingArchive;
 
             var isoName =
                 await _archiveInspectionService.FindIsoNameAsync(
-                    sourcePath);
+                    sourcePath,
+                    cancellationToken);
 
             if (isoName is null)
             {
@@ -178,7 +197,8 @@ public class GamePreflightService
         {
             var destinationIndex =
                 await GetDestinationIndexAsync(
-                    destinationDirectory);
+                    destinationDirectory,
+                    cancellationToken);
 
             var existingEncryptedIso =
                 destinationIndex.FindExistingIso(
@@ -234,7 +254,8 @@ public class GamePreflightService
         {
             var destinationIndex =
                 await GetDestinationIndexAsync(
-                    destinationDirectory);
+                    destinationDirectory,
+                    cancellationToken);
 
             var existingGame =
                 destinationIndex.FindExistingGame(
@@ -263,7 +284,8 @@ public class GamePreflightService
         {
             var isoDestinationIndex =
                 await GetDestinationIndexAsync(
-                    _isoDestinationDirectory);
+                    _isoDestinationDirectory,
+                    cancellationToken);
 
             var existingIso =
                 isoDestinationIndex.FindExistingGame(
@@ -316,7 +338,8 @@ public class GamePreflightService
             {
                 var jbDestinationIndex =
                     await GetDestinationIndexAsync(
-                        jbDirectoryToCheck);
+                        jbDirectoryToCheck,
+                        cancellationToken);
 
                 var existingJbGame =
                     jbDestinationIndex.FindJbGameByTitleId(
@@ -334,6 +357,8 @@ public class GamePreflightService
                 }
             }
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         var keyPath =
             _keyIndex.Find(gameName);
@@ -361,12 +386,15 @@ public class GamePreflightService
 
         job.DiscKey = discKey;
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         _reservations.Reserve(
             job,
             destinationDirectory,
             gameName,
             cachedMetadata?.TitleId);
 
+        job.Stage = JobStage.None;
         job.State = JobState.Ready;
 
         if (extension.Equals(
@@ -384,8 +412,10 @@ public class GamePreflightService
         }
     }
     private async Task<DestinationLibraryIndex> GetDestinationIndexAsync(
-        string destinationDirectory)
+        string destinationDirectory,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var cacheKey =
             destinationDirectory.TrimEnd(
                 Path.DirectorySeparatorChar,
@@ -406,7 +436,9 @@ public class GamePreflightService
                 {
                     return DateTime.MinValue;
                 }
-            });
+            }, cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (_destinationIndexes.TryGetValue(
                 cacheKey,
@@ -425,7 +457,10 @@ public class GamePreflightService
         var index =
             await Task.Run(() =>
                 _destinationInspectionService.CreateIndex(
-                    destinationDirectory));
+                    destinationDirectory,
+                    cancellationToken), cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         _destinationIndexes[cacheKey] =
             new CachedDestinationIndex
