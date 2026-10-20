@@ -73,8 +73,18 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsPipelineActive { get; set; }
 
+    [ObservableProperty]
+    public partial bool IsQueueLoading { get; set; } = true;
+
+    public Task QueueInitializationTask { get; }
+
+    partial void OnIsQueueLoadingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditQueue));
+    }
+
     public bool CanEditQueue =>
-    !IsPipelineActive && _preflightCancellation is null && !_shutdownCoordinator.IsStopping;
+    !IsQueueLoading && !IsPipelineActive && _preflightCancellation is null && !_shutdownCoordinator.IsStopping;
 
     partial void OnIsPipelineActiveChanged(
         bool value)
@@ -88,7 +98,7 @@ public partial class MainViewModel : ViewModelBase
     public string SettingsMode =>
         _settingsService.IsPortableMode ? "Portable" : "Normal";
 
-    public MainViewModel(Window window)
+    public MainViewModel(Window window, IQueueStateStore? queueStateStore = null)
     {
         _window = window;
 
@@ -109,7 +119,7 @@ public partial class MainViewModel : ViewModelBase
 
         _queuePersistence =
             new QueuePersistenceCoordinator(
-                _queueStateService,
+                queueStateStore ?? _queueStateService,
                 Jobs,
                 message =>
                     SettingsStatus = message);
@@ -141,13 +151,27 @@ public partial class MainViewModel : ViewModelBase
         Ps3DecThreadCount = _settings.Ps3DecThreadCount;
         RemovePs3Update = _settings.RemovePs3Update;
 
-        _queuePersistence.Start();
+        QueueInitializationTask = InitializeQueueAsync();
 
         _startupCleanupTask = CleanupStaleStagingAsync(
                 IsoDestinationPath,
                 JbDestinationPath);
 
         _ = RefreshToolStatusAsync();
+    }
+
+    private async Task InitializeQueueAsync()
+    {
+        try
+        {
+            await _queuePersistence.StartAsync();
+            IsQueueLoading = false;
+        }
+        catch (Exception ex)
+        {
+            SettingsStatus = $"Could not load queue: {ex.Message}";
+            throw;
+        }
     }
 
     private async Task CleanupStaleStagingAsync(
@@ -726,6 +750,7 @@ public partial class MainViewModel : ViewModelBase
             // WhenAll has settled every operation; retain its failure for the user.
             SettingsStatus = $"Queue operation ended during shutdown: {ex.Message}";
         }
+        await QueueInitializationTask;
         await _startupCleanupTask;
     }
 

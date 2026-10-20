@@ -169,6 +169,8 @@
 							FontSize="20"
 							FontWeight="SemiBold" />
 
+						<TextBlock Text="Loading queue..." IsVisible="{Binding IsQueueLoading}" />
+
 						<StackPanel
 							Orientation="Horizontal"
 							Spacing="10">

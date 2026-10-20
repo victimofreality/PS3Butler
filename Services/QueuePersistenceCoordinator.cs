@@ -15,7 +15,7 @@ public sealed class QueuePersistenceCoordinator
     private readonly Action<string>? _reportError;
 
     private bool _isRestoring;
-    private bool _isStarted;
+    private Task? _restoreTask;
     private bool _isStopped;
     private Task _saveTask = Task.CompletedTask;
     private Exception? _saveError;
@@ -39,29 +39,32 @@ public sealed class QueuePersistenceCoordinator
             reportError;
     }
 
-    public void Start()
+    public Task StartAsync()
     {
-        if (_isStarted)
+        if (_restoreTask is not null)
         {
-            return;
+            return _restoreTask;
         }
 
-        _isStarted = true;
+        if (_isStopped)
+            throw new InvalidOperationException("Queue persistence has already stopped.");
 
         _jobs.CollectionChanged +=
             Jobs_CollectionChanged;
 
-        Restore();
+        _isRestoring = true;
+        _restoreTask = RestoreAsync();
+        return _restoreTask;
     }
 
-    private void Restore()
+    private async Task RestoreAsync()
     {
-        _isRestoring = true;
-
         try
         {
-            foreach (var job in
-                     _queueStateService.Load())
+            // Read and deserialize away from the UI; resume on the caller's
+            // context before attaching restored jobs to the bound collection.
+            var restored = await Task.Run(_queueStateService.Load);
+            foreach (var job in restored)
             {
                 _jobs.Add(job);
             }
@@ -74,7 +77,7 @@ public sealed class QueuePersistenceCoordinator
 
     private void Save()
     {
-        if (_isRestoring || _isStopped)
+        if (_isRestoring || _isStopped || _restoreTask?.IsFaulted == true)
         {
             return;
         }
@@ -140,6 +143,11 @@ public sealed class QueuePersistenceCoordinator
 
     public async Task StopAsync()
     {
+        // Closing during startup must not replace unread queue inputs with an
+        // empty snapshot. A failed restore also blocks the final write.
+        if (_restoreTask is not null)
+            await _restoreTask;
+
         // Always write a final snapshot, including on a retry after a save failure.
         if (!_isStopped)
         {

@@ -80,7 +80,7 @@ public static class ArchiveFolderSmoke
                 var jobs = new ObservableCollection<GameJob>();
                 var store = new QueueStateService(Path.Combine(root, name + "-queue.json"));
                 var persistence = new QueuePersistenceCoordinator(store, jobs);
-                persistence.Start();
+                await persistence.StartAsync();
                 var job = new GameJob { SourcePath = input, OutputFormat = format };
                 jobs.Add(job);
                 var pipeline = Pipeline();

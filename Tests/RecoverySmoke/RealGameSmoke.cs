@@ -61,7 +61,7 @@ public static class RealGameSmoke
             var jobs = new ObservableCollection<GameJob>();
             var queueStore = new QueueStateService(Path.Combine(workRoot, "cancel-queue.json"));
             var persistence = new QueuePersistenceCoordinator(queueStore, jobs);
-            persistence.Start();
+            await persistence.StartAsync();
             jobs.Add(cancelJob);
             var cancelPipeline = new PipelineRunCoordinator(new KeyIndexService(), metadata, preflight);
             var running = cancelPipeline.RunAsync(jobs, cancelSettings);

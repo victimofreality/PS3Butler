@@ -84,7 +84,7 @@ public static class SmbSmoke
                 var jobs = new ObservableCollection<GameJob>();
                 var store = new QueueStateService(Path.Combine(local, format + "-queue.json"));
                 var persistence = new QueuePersistenceCoordinator(store, jobs);
-                persistence.Start();
+                await persistence.StartAsync();
                 var job = new GameJob { SourcePath = source, OutputFormat = format };
                 jobs.Add(job);
                 var pipeline = Pipeline();

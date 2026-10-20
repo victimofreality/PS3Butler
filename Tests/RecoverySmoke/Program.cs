@@ -65,7 +65,7 @@ try
     var store = new QueueStateService(Path.Combine(root, "queue.json"));
     var jobs = new ObservableCollection<GameJob>();
     var persistence = new QueuePersistenceCoordinator(store, jobs);
-    persistence.Start();
+    await persistence.StartAsync();
     var job = new GameJob { SourcePath = "original.iso" };
     jobs.Add(job);
     job.DestinationOverride = "destination";
@@ -87,7 +87,7 @@ try
     File.WriteAllText(blocked, "not a directory");
     var failures = new List<string>();
     var failing = new QueuePersistenceCoordinator(new QueueStateService(Path.Combine(blocked, "queue.json")), jobs, failures.Add);
-    failing.Start();
+    await failing.StartAsync();
     var failed = false;
     try { await failing.StopAsync(); }
     catch (InvalidOperationException) { failed = true; }
@@ -120,7 +120,7 @@ try
     var finishingJob = new GameJob { SourcePath = "finishing.iso", State = JobState.Running };
     var finishingJobs = new ObservableCollection<GameJob> { finishingJob };
     var finishingPersistence = new QueuePersistenceCoordinator(finishingStore, finishingJobs);
-    finishingPersistence.Start();
+    await finishingPersistence.StartAsync();
     var finishingOperation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     var finishingShutdown = new QueueShutdownCoordinator(() => { }, () => finishingOperation.Task, finishingPersistence.StopAsync);
     var finishingStop = finishingShutdown.StopAsync();
@@ -149,6 +149,7 @@ try
     displaying.Status = "Error";
     Check(displaying.State == JobState.Error, "legacy status bridge remains writable");
     await PersistenceCoalescingSmoke.RunAsync(root);
+    await PersistenceRestoreSmoke.RunAsync(root);
     Console.WriteLine("Recovery smoke checks passed.");
 }
 finally

@@ -50,8 +50,8 @@ public static class PipelineOrderingSmoke
                 var activity = new Activity(jobs);
                 var store = new QueueStateService(Path.Combine(local, "queue.json"));
                 var persistence = new QueuePersistenceCoordinator(store, jobs);
-                persistence.Start();
-                // Start() restores into an existing collection; this fixture starts
+                await persistence.StartAsync();
+                // StartAsync() restores into an existing collection; this fixture starts
                 // with no saved file and StopAsync still takes a final snapshot.
                 var metadata = new MetadataCacheService(new SettingsService());
                 var pipeline = new PipelineRunCoordinator(new KeyIndexService(), metadata, new QueuePreflightCoordinator(metadata));

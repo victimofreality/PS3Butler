@@ -67,7 +67,7 @@ public sealed class MainWindowSmoke : Application
 
     private static async Task RunAsync()
     {
-        var window = CreateWindow();
+        var window = await CreateWindowAsync();
         var closed = ClosedTask(window);
         var viewModel = (MainViewModel)window.DataContext!;
         Require(viewModel.Jobs.Count == 1 && viewModel.Jobs[0].State == JobState.Waiting, "real window restores pending queue");
@@ -97,7 +97,7 @@ public sealed class MainWindowSmoke : Application
 
         var store = new QueueStateService(new SettingsService());
         Require(store.Load().Count == 1 && store.Load()[0].State == JobState.Waiting, "queue flushed before native window closed");
-        var restoredWindow = CreateWindow();
+        var restoredWindow = await CreateWindowAsync();
         var restored = (MainViewModel)restoredWindow.DataContext!;
         Require(restored.Jobs.Count == 1 && restored.Jobs[0].SourcePath == _source && restored.Jobs[0].State == JobState.Waiting &&
             restored.Jobs[0].LocalSourcePath is null, "reopened MainWindow restores fresh waiting job");
@@ -106,7 +106,7 @@ public sealed class MainWindowSmoke : Application
         await restoredClosed.WaitAsync(TimeSpan.FromSeconds(10));
         Require(restoredClosed.IsCompleted, "idle restored window closes after flush");
 
-        var preflightWindow = CreateWindow();
+        var preflightWindow = await CreateWindowAsync();
         var preflightViewModel = (MainViewModel)preflightWindow.DataContext!;
         var firstPreflight = preflightViewModel.Jobs[0];
         var untouched = new GameJob { SourcePath = _source, Details = "untouched" };
@@ -140,7 +140,7 @@ public sealed class MainWindowSmoke : Application
         var archivePath = Path.Combine(_root, "inspection.zip");
         using (var archive = System.IO.Compression.ZipFile.Open(archivePath, System.IO.Compression.ZipArchiveMode.Create))
             archive.CreateEntry(Path.GetFileName(_source));
-        var closingPreflightWindow = CreateWindow();
+        var closingPreflightWindow = await CreateWindowAsync();
         var closingPreflight = (MainViewModel)closingPreflightWindow.DataContext!;
         closingPreflight.Jobs.Clear();
         var archiveJob = new GameJob { SourcePath = archivePath };
@@ -161,7 +161,7 @@ public sealed class MainWindowSmoke : Application
         // Restore the single-input fixture for the existing save-failure test.
         store.Save(new[] { new GameJob { SourcePath = _source } });
 
-        var failureWindow = CreateWindow();
+        var failureWindow = await CreateWindowAsync();
         var failureViewModel = (MainViewModel)failureWindow.DataContext!;
         var failureClosed = ClosedTask(failureWindow);
         var queuePath = new SettingsService().QueueFilePath;
@@ -175,11 +175,61 @@ public sealed class MainWindowSmoke : Application
         failureWindow.Close();
         await failureClosed.WaitAsync(TimeSpan.FromSeconds(10));
         Require(store.Load().Count == 1, "retry saves queue and closes actual window");
+
+        using (var delayed = new PersistenceRestoreSmoke.ControlledLoadStore(store))
+        {
+            var loadingWindow = CreateWindow(delayed);
+            var loading = (MainViewModel)loadingWindow.DataContext!;
+            var loadingClosed = ClosedTask(loadingWindow);
+            var changesOnUi = true;
+            loading.Jobs.CollectionChanged += (_, _) => changesOnUi &= Dispatcher.UIThread.CheckAccess();
+            await delayed.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Require(loading.IsQueueLoading && !loading.CanEditQueue && loading.Jobs.Count == 0, "startup read keeps queue locked while loading");
+            var responsive = await Dispatcher.UIThread.InvokeAsync(() => true, DispatcherPriority.Background);
+            Require(responsive && delayed.ReadThreadId != Environment.CurrentManagedThreadId, "UI dispatcher remains responsive during blocked background restore");
+            loading.UrlToAdd = "https://example.invalid/blocked.iso";
+            loading.AddUrlCommand.Execute(null);
+            loading.ClearQueueCommand.Execute(null);
+            await loading.PreflightQueueCommand.ExecuteAsync(null);
+            await loading.ProcessReadyJobsCommand.ExecuteAsync(null);
+            Require(loading.Jobs.Count == 0 && !loading.IsPipelineActive, "startup lock blocks queue edits and execution");
+            loadingWindow.Close();
+            loadingWindow.Close();
+            Require(!loadingClosed.IsCompleted && delayed.WriteCount == 0, "native close waits for startup read without overwriting queue");
+            delayed.Release();
+            await loading.QueueInitializationTask.WaitAsync(TimeSpan.FromSeconds(5));
+            await loadingClosed.WaitAsync(TimeSpan.FromSeconds(10));
+            Require(changesOnUi && loading.Jobs.Count == 1, "restored collection changes occur on UI thread exactly once");
+            Require(!loading.IsQueueLoading && !loading.CanEditQueue && !delayed.WroteBeforeLoad && store.Load().Count == 1,
+                "close during restore preserves pending input and stopping lock");
+        }
+        using (var delayed = new PersistenceRestoreSmoke.ControlledLoadStore(store))
+        {
+            var loadingWindow = CreateWindow(delayed);
+            var loading = (MainViewModel)loadingWindow.DataContext!;
+            await delayed.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            delayed.Release();
+            await loading.QueueInitializationTask.WaitAsync(TimeSpan.FromSeconds(5));
+            Require(!loading.IsQueueLoading && loading.CanEditQueue, "successful restore unlocks queue editing");
+            loading.UrlToAdd = "https://example.invalid/after-restore.iso";
+            loading.AddUrlCommand.Execute(null);
+            var loadingClosed = ClosedTask(loadingWindow);
+            loadingWindow.Close();
+            await loadingClosed.WaitAsync(TimeSpan.FromSeconds(10));
+            Require(store.Load().Count == 2, "edits after startup restoration survive close");
+        }
     }
 
-    private static MainWindow CreateWindow()
+    private static async Task<MainWindow> CreateWindowAsync()
     {
-        var window = new MainWindow { ShowInTaskbar = false, Opacity = 0 };
+        var window = CreateWindow();
+        await ((MainViewModel)window.DataContext!).QueueInitializationTask;
+        return window;
+    }
+
+    private static MainWindow CreateWindow(IQueueStateStore? queueStateStore = null)
+    {
+        var window = new MainWindow(queueStateStore) { ShowInTaskbar = false, Opacity = 0 };
         window.Show();
         return window;
     }

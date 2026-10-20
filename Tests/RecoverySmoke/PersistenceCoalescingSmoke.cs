@@ -10,7 +10,7 @@ public static class PersistenceCoalescingSmoke
         {
             var jobs = new ObservableCollection<GameJob>();
             var persistence = new QueuePersistenceCoordinator(store, jobs);
-            persistence.Start();
+            await persistence.StartAsync();
             var job = new GameJob { SourcePath = "burst.iso", DestinationOverride = "before" };
             jobs.Add(job);
             await store.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -38,7 +38,7 @@ public static class PersistenceCoalescingSmoke
             var messages = new List<string>();
             var jobs = new ObservableCollection<GameJob>();
             var persistence = new QueuePersistenceCoordinator(store, jobs, messages.Add);
-            persistence.Start();
+            await persistence.StartAsync();
             var job = new GameJob { SourcePath = "recover.iso", DestinationOverride = "before" };
             jobs.Add(job);
             await store.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -55,7 +55,7 @@ public static class PersistenceCoalescingSmoke
             var messages = new List<string>();
             var jobs = new ObservableCollection<GameJob>();
             var persistence = new QueuePersistenceCoordinator(store, jobs, messages.Add);
-            persistence.Start();
+            await persistence.StartAsync();
             var job = new GameJob { SourcePath = "retry.iso", DestinationOverride = "before" };
             jobs.Add(job);
             await store.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
