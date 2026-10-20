@@ -15,6 +15,12 @@ if (args.Length == 2 && args[0] == "--real")
     return 0;
 }
 
+if (args.Length == 2 && args[0] == "--interrupt")
+{
+    await InterruptionSmoke.RunAsync(args[1]);
+    return 0;
+}
+
 var root = Path.Combine(Path.GetTempPath(), "PS3ButlerSmoke", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
