@@ -76,6 +76,35 @@ internal static class ArchiveFormatSmoke
                 var damagedResult = await extraction.ExtractIsoAsync(damaged, Path.Combine(root, name + " damaged-output"));
                 Check(!damagedResult.Success && damagedResult.Error.Contains("7-Zip exited with code"), $"{name}: truncated RAR fails instead of reporting success");
             }
+
+            var splitDirectory = Path.Combine(root, "rar-volumes");
+            Directory.CreateDirectory(splitDirectory);
+            var splitPacked = await new ProcessRunner().RunAsync(new ProcessRunRequest
+            {
+                FileName = rar,
+                ArgumentList = new[] { "a", "-cfg-", "-m0", "-v64k", "-ep", Path.Combine(splitDirectory, "split.rar"), source },
+                Timeout = TimeSpan.FromSeconds(30)
+            });
+            Check(splitPacked.Success, "split RAR fixture created");
+            var volumes = Directory.GetFiles(splitDirectory, "*.rar").OrderBy(path => path, StringComparer.Ordinal).ToArray();
+            Check(volumes.Length > 2 && Path.GetFileName(volumes[0]).Contains("part1"), "split fixture contains ordered first and later volumes");
+            Check(await inspection.FindIsoNameAsync(volumes[0]) == Path.GetFileName(source), "first split RAR volume identifies ISO");
+            var splitResult = await extraction.ExtractIsoAsync(volumes[0], Path.Combine(root, "split-output"));
+            Check(splitResult.Success, $"all split RAR volumes extract ({splitResult.Error})");
+            Check(Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(splitResult.IsoPath))) == expectedHash,
+                "split RAR extracted bytes match source");
+
+            var missingDirectory = Path.Combine(root, "missing-volume");
+            Directory.CreateDirectory(missingDirectory);
+            // Copy every volume except the second; leave the complete fixture intact.
+            foreach (var volume in volumes.Where((_, index) => index != 1))
+                File.Copy(volume, Path.Combine(missingDirectory, Path.GetFileName(volume)));
+            using var missingTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var missingResult = await extraction.ExtractIsoAsync(Path.Combine(missingDirectory, Path.GetFileName(volumes[0])),
+                Path.Combine(root, "missing-output"), cancellationToken: missingTimeout.Token);
+            Check(!missingTimeout.IsCancellationRequested && !missingResult.Success && missingResult.Error.Contains("7-Zip exited with code"),
+                "missing RAR volume reports tool failure without waiting for cancellation");
+            Check(string.IsNullOrEmpty(missingResult.IsoPath), "missing volume never returns a partial ISO as usable output");
         }
 
         var invalidInput = Path.Combine(root, "invalid-input");
