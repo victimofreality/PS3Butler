@@ -22,7 +22,7 @@ Keep `portable.txt` beside the executable. Settings, queue inputs and metadata u
 
 ## Validation and limits
 
-Validation includes real PS3 images and local/SMB output workflows, process interruption and cleanup, native-window shutdown/save failures, queue recovery, controlled HTTP/HTTPS transport, and ZIP/7z/RAR transport fixtures. The user accepted the manual preview check. This does not cover every server, game or archive variant.
+Validation includes real PS3 images and local/SMB output workflows, process interruption and cleanup, native-window shutdown/save failures, queue recovery, controlled HTTP/HTTPS transport, and ZIP/7z/RAR transport fixtures. The preview build also passed manual application validation. This does not cover every server, game or archive variant.
 
 This preview is unsigned and has no installer. Password-protected archives, legacy RAR variants, interactive download-provider login, proxies and public-provider-specific behavior need further coverage. Multi-volume RAR testing covers a local first volume with adjacent parts; automatic downloading of all parts is not provided. Persistent download resume, Xbox and webMAN integration are not included.
 

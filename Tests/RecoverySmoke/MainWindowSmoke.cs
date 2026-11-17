@@ -68,6 +68,8 @@ public sealed class MainWindowSmoke : Application
 
     private static async Task RunAsync()
     {
+        await CheckToolScanShutdownAsync(false);
+        await CheckToolScanShutdownAsync(true);
         var window = await CreateWindowAsync();
         var closed = ClosedTask(window);
         var viewModel = (MainViewModel)window.DataContext!;
@@ -85,6 +87,15 @@ public sealed class MainWindowSmoke : Application
         window.Close();
         window.Close();
         Require(!closed.IsCompleted && !viewModel.CanEditQueue, "native close waits and keeps queue locked");
+        var savedSettings = File.ReadAllText(new SettingsService().SettingsFilePath);
+        var stoppingStatus = viewModel.SettingsStatus;
+        var threadCount = viewModel.Ps3DecThreadCount;
+        viewModel.Ps3DecThreadCount = 0;
+        await viewModel.SaveSettingsCommand.ExecuteAsync(null);
+        Require(viewModel.SettingsStatus == stoppingStatus &&
+            File.ReadAllText(new SettingsService().SettingsFilePath) == savedSettings,
+            "settings save is ignored after shutdown starts");
+        viewModel.Ps3DecThreadCount = threadCount;
         viewModel.UrlToAdd = "https://example.invalid/blocked.iso";
         viewModel.AddUrlCommand.Execute(null);
         viewModel.RemoveSelectedJobCommand.Execute(null);
@@ -219,6 +230,47 @@ public sealed class MainWindowSmoke : Application
             loadingWindow.Close();
             await loadingClosed.WaitAsync(TimeSpan.FromSeconds(10));
             Require(store.Load().Count == 2, "edits after startup restoration survive close");
+        }
+    }
+
+    private static async Task CheckToolScanShutdownAsync(bool duringSave)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var scans = 0;
+        var viewModel = new MainViewModel(new Window(), detectTools: settings =>
+        {
+            if (!duringSave || Interlocked.Increment(ref scans) > 1)
+            {
+                entered.TrySetResult();
+                release.Task.GetAwaiter().GetResult();
+            }
+            return [new ToolStatus { Name = "Controlled scan", IsAvailable = true }];
+        });
+        Task save = Task.CompletedTask;
+        try
+        {
+            await viewModel.QueueInitializationTask;
+            if (duringSave)
+            {
+                await WaitUntilAsync(() => viewModel.Tools.Count == 1);
+                save = viewModel.SaveSettingsCommand.ExecuteAsync(null);
+            }
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var stopping = viewModel.StopAsync();
+            await Task.Delay(100);
+            Require(!stopping.IsCompleted, $"shutdown waits for blocked {(duringSave ? "settings" : "startup")} tool scan");
+            var tools = viewModel.Tools.ToArray();
+            release.TrySetResult();
+            await stopping.WaitAsync(TimeSpan.FromSeconds(10));
+            await save;
+            Require(viewModel.Tools.SequenceEqual(tools), "stopping tool scan does not apply late results");
+        }
+        finally
+        {
+            release.TrySetResult();
+            await save;
+            await viewModel.StopAsync();
         }
     }
 

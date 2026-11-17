@@ -29,6 +29,8 @@ public partial class MainViewModel : ViewModelBase
     private readonly QueuePersistenceCoordinator _queuePersistence;
     private readonly PipelineRunCoordinator _pipelineRunCoordinator;
     private readonly Task _startupCleanupTask;
+    private readonly Task _startupToolStatusTask;
+    private readonly Func<AppSettings, List<ToolStatus>> _detectTools;
     private CancellationTokenSource? _startupWaitCancellation;
     private CancellationTokenSource? _preflightCancellation;
     private int _toolStatusRefreshVersion;
@@ -103,9 +105,11 @@ public partial class MainViewModel : ViewModelBase
     public string SettingsMode =>
         _settingsService.IsPortableMode ? "Portable" : "Normal";
 
-    public MainViewModel(Window window, IQueueStateStore? queueStateStore = null)
+    public MainViewModel(Window window, IQueueStateStore? queueStateStore = null,
+        Func<AppSettings, List<ToolStatus>>? detectTools = null)
     {
         _window = window;
+        _detectTools = detectTools ?? (settings => new ToolDetectionService(settings).DetectTools());
 
         _settingsService =
             new SettingsService();
@@ -162,7 +166,7 @@ public partial class MainViewModel : ViewModelBase
                 IsoDestinationPath,
                 JbDestinationPath);
 
-        _ = RefreshToolStatusAsync();
+        _startupToolStatusTask = RefreshToolStatusAsync();
     }
 
     private async Task InitializeQueueAsync()
@@ -205,6 +209,8 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task SaveSettings()
     {
+        if (_shutdownCoordinator.IsStopping) return;
+
         var errors = new List<string>();
 
         if (!File.Exists(RedrrxPs3DecPath))
@@ -602,10 +608,10 @@ public partial class MainViewModel : ViewModelBase
         try
         {
             var detectedTools = await Task.Run(() =>
-                new ToolDetectionService(detectionSettings).DetectTools());
+                _detectTools(detectionSettings));
 
             // A settings save may have started a newer scan while this one ran.
-            if (refreshVersion != _toolStatusRefreshVersion)
+            if (_shutdownCoordinator.IsStopping || refreshVersion != _toolStatusRefreshVersion)
             {
                 return;
             }
@@ -619,7 +625,7 @@ public partial class MainViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            if (refreshVersion == _toolStatusRefreshVersion)
+            if (!_shutdownCoordinator.IsStopping && refreshVersion == _toolStatusRefreshVersion)
             {
                 SettingsStatus = $"Could not check tools: {ex.Message}";
             }
@@ -744,7 +750,8 @@ public partial class MainViewModel : ViewModelBase
             PreflightQueueCommand.ExecutionTask,
             RetrySelectedJobCommand.ExecutionTask,
             ProcessReadyJobsCommand.ExecutionTask,
-            BrowseJobDestinationCommand.ExecutionTask
+            BrowseJobDestinationCommand.ExecutionTask,
+            SaveSettingsCommand.ExecutionTask
         }.Where(task => task is not null).Cast<Task>().ToArray();
         try
         {
@@ -757,6 +764,7 @@ public partial class MainViewModel : ViewModelBase
         }
         await QueueInitializationTask;
         await _startupCleanupTask;
+        await _startupToolStatusTask;
     }
 
     private static string MakeSafeFolderName(string name)
