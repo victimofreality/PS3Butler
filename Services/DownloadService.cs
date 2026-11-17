@@ -226,7 +226,7 @@ public class DownloadService
             string.Empty);
     }
 
-    private static string? TryGetContentDispositionFileName(
+    internal static string? TryGetContentDispositionFileName(
         HttpResponseMessage response)
     {
         var contentDisposition =
@@ -240,7 +240,7 @@ public class DownloadService
             candidate);
     }
 
-    private static string? TryGetUrlFileName(
+    internal static string? TryGetUrlFileName(
         Uri? uri)
     {
         if (uri is null)

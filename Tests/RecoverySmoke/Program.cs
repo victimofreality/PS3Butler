@@ -3,6 +3,18 @@ using Avalonia;
 using PS3Butler.Models;
 using PS3Butler.Services;
 
+if (args.Length == 3 && args[0] == "--resume-child")
+{
+    await DownloadResumeSmoke.RunInterruptedChildAsync(args[1], args[2]);
+    return 0;
+}
+
+if (args.Length == 1 && args[0] == "--download-resume")
+{
+    await DownloadResumeSmoke.RunAsync();
+    return 0;
+}
+
 if (args.Length == 1 && args[0] == "--rar")
 {
     await ArchiveFormatSmoke.RunAsync(includeRar: true);

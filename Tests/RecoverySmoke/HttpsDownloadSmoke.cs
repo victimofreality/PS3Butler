@@ -33,7 +33,7 @@ internal static class HttpsDownloadSmoke
                 (errors & ~SslPolicyErrors.RemoteCertificateChainErrors) == SslPolicyErrors.None
         };
         using var client = new HttpClient(handler);
-        var downloader = new DownloadService(client);
+        using var downloader = new ResumableDownloadService(client);
         var checks = 0;
         void Check(bool condition, string label)
         {
@@ -64,14 +64,14 @@ internal static class HttpsDownloadSmoke
             await using var server = new Server(certificate, $"HTTP/1.1 {code} Rejected\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             var result = await Download(downloader, server.Url + "game.iso", code.ToString());
             Check(!result.Success && result.Error.Contains(code.ToString()), $"HTTPS {code} reports server status");
-            Check(!Directory.EnumerateFiles(Path.Combine(root, code.ToString())).Any(), $"HTTPS {code} leaves no file");
+            Check(!Directory.EnumerateFiles(Path.Combine(root, code.ToString()), "*", SearchOption.AllDirectories).Any(), $"HTTPS {code} leaves no file");
         }
 
         await using (var server = new Server(certificate, "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\nConnection: close\r\n\r\nshort"))
         {
             var result = await Download(downloader, server.Url + "game.iso", "truncated");
             Check(!result.Success && result.Error.StartsWith("Download failed:"), "truncated TLS transfer reports failure");
-            Check(!Directory.EnumerateFiles(Path.Combine(root, "truncated")).Any(), "truncated TLS partial removed");
+            Check(!Directory.EnumerateFiles(Path.Combine(root, "truncated"), "*", SearchOption.AllDirectories).Any(), "truncated TLS partial removed");
         }
 
         foreach (var sendHeaders in new[] { false, true })
@@ -85,14 +85,15 @@ internal static class HttpsDownloadSmoke
             cancellation.Cancel();
             var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
             Check(!result.Success && result.Error == "Download cancelled.", $"HTTPS cancellation awaiting {(sendHeaders ? "body" : "headers")} settles");
-            Check(!Directory.EnumerateFiles(Path.Combine(root, name)).Any(), "HTTPS cancellation removes partial");
+            Check(!Directory.EnumerateFiles(Path.Combine(root, name), "*", SearchOption.AllDirectories).Any(), "HTTPS cancellation removes partial");
         }
 
         await using (var server = new Server(certificate, Ok()))
         {
-            var result = await Download(new DownloadService(), server.Url + "game.iso", "untrusted");
+            using var defaultDownloader = new ResumableDownloadService();
+            var result = await Download(defaultDownloader, server.Url + "game.iso", "untrusted");
             Check(!result.Success && result.Error.StartsWith("Download failed:"), "default production client rejects untrusted TLS certificate");
-            Check(!Directory.EnumerateFiles(Path.Combine(root, "untrusted")).Any(), "certificate rejection leaves no output");
+            Check(!Directory.EnumerateFiles(Path.Combine(root, "untrusted"), "*", SearchOption.AllDirectories).Any(), "certificate rejection leaves no output");
         }
         await using (var server = new Server(certificate, Ok()))
         {
@@ -101,7 +102,7 @@ internal static class HttpsDownloadSmoke
         }
         Console.WriteLine($"HTTPS smoke: {checks} checks passed. Fixtures: {root}");
 
-        Task<(bool Success, string OutputPath, string Error)> Download(DownloadService service, string url, string folder) =>
+        Task<(bool Success, string OutputPath, string Error)> Download(ResumableDownloadService service, string url, string folder) =>
             service.DownloadAsync(url, Path.Combine(root, folder)).WaitAsync(TimeSpan.FromSeconds(10));
     }
 

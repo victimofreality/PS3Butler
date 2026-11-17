@@ -104,6 +104,7 @@ public sealed class JobExecutionService
         string inputIsoPath;
         string? temporaryExtractionDirectory = null;
         string? temporaryJbDirectory = null;
+        string? temporaryDecryptionDirectory = null;
         string? decryptedIsoPath = null;
 
         try
@@ -497,11 +498,17 @@ public sealed class JobExecutionService
                     job.Progress = value;
                 });
 
+            // Own the entire tool workspace: v3 can leave an atomic checkpoint
+            // temporary directory when its process is killed during a save.
+            temporaryDecryptionDirectory = Path.Combine(
+                _options.WorkDirectory, "decrypt", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(temporaryDecryptionDirectory);
+
             var decryptResult =
                 await ps3DecService.DecryptAsync(
                     inputIsoPath,
                     job.DiscKey,
-                    _options.WorkDirectory,
+                    temporaryDecryptionDirectory,
                     decryptProgress,
                     cancellationToken);
 
@@ -803,6 +810,11 @@ public sealed class JobExecutionService
                         decryptResult.OutputPath);
                 }
 
+                if (Directory.Exists(temporaryDecryptionDirectory))
+                {
+                    Directory.Delete(temporaryDecryptionDirectory, recursive: true);
+                }
+
                 if (temporaryExtractionDirectory is not null &&
                     Directory.Exists(
                         temporaryExtractionDirectory))
@@ -854,6 +866,9 @@ public sealed class JobExecutionService
         {
             TryDeleteFile(
                 decryptedIsoPath);
+
+            TryDeleteDirectory(
+                temporaryDecryptionDirectory);
 
             TryDeleteDirectory(
                 temporaryExtractionDirectory);

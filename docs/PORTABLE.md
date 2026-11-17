@@ -12,4 +12,6 @@ Keep `portable.txt` beside the executable. Settings, the saved queue, and metada
 
 To update, close PS3 Butler and allow active work and queue saving to finish. Extract the replacement into a new folder, then copy your backed-up `Data` folder beside the new executable before starting it. Keep the old folder until you have verified your settings and queue.
 
+Interrupted downloads can resume on servers that provide a strong ETag, a known length and valid byte-range responses. Start the restored job again; Butler does not download automatically at startup. Keep the same URL and configured work directory when updating: saved partials are under that work directory's `download/resume` folder, outside `Data`. Servers without safe resume support restart from zero. Removed queue entries may leave saved partials; close Butler before deleting this folder to discard them. Checkpoint files can contain private download URLs, so do not include them in shared packages or diagnostic uploads.
+
 This is a development preview. RAR archives and remote HTTPS/authentication scenarios have less validation than the local ISO, ZIP/7z and SMB workflows. Before using a production destination, test a single game in an isolated destination. Windows may display a warning for an unsigned application; this preview has no signing certificate.

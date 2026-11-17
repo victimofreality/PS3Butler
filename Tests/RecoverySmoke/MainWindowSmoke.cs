@@ -81,8 +81,14 @@ public sealed class MainWindowSmoke : Application
             "settings validation accepts and preserves selected Redrrx binary");
         var run = viewModel.ProcessReadyJobsCommand.ExecuteAsync(null);
         Require(viewModel.IsPipelineActive && !viewModel.CanEditQueue, "processing command locks queue");
-        await WaitUntilAsync(() => Directory.EnumerateFiles(_root, "*.decrypted.iso*").Any(), run);
+        await WaitUntilAsync(() => Directory.EnumerateFiles(_root, "*.decrypted.iso*", SearchOption.AllDirectories).Any(), run);
         Require(!run.IsCompleted, "window test reached active decrypt process");
+        var decryptWorkspace = Directory.GetDirectories(Path.Combine(_root, "decrypt")).Single();
+        var atomicTemporaryDirectory = Path.Combine(decryptWorkspace, ".atomicwrite-smoke");
+        Directory.CreateDirectory(atomicTemporaryDirectory);
+        File.WriteAllText(Path.Combine(atomicTemporaryDirectory, "tmpfile.tmp"), "interrupted checkpoint");
+        var unrelatedWorkFile = Path.Combine(_root, "keep-workspace.txt");
+        File.WriteAllText(unrelatedWorkFile, "unrelated work file");
         viewModel.SelectedJob = viewModel.Jobs[0];
         window.Close();
         window.Close();
@@ -107,6 +113,8 @@ public sealed class MainWindowSmoke : Application
         Require(!viewModel.IsPipelineActive && !viewModel.CanEditQueue, "settled pipeline does not unlock stopping queue");
         Require(viewModel.Jobs[0].Stage == JobStage.Cancelled, "MainWindow shutdown tracks cancelled stage");
         Require(!Directory.EnumerateFiles(_root, "*.iso*", SearchOption.AllDirectories).Any(), "window shutdown cleans partial output and recovery files");
+        Require(!Directory.Exists(decryptWorkspace), "window shutdown removes owned decrypt workspace including atomic checkpoint temporaries");
+        Require(File.ReadAllText(unrelatedWorkFile) == "unrelated work file", "decrypt workspace cleanup preserves unrelated work files");
 
         var store = new QueueStateService(new SettingsService());
         Require(store.Load().Count == 1 && store.Load()[0].State == JobState.Waiting, "queue flushed before native window closed");

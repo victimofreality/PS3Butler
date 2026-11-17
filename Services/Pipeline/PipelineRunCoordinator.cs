@@ -126,8 +126,8 @@ public sealed class PipelineRunCoordinator
                 }
             }
 
-            var downloadService =
-                new DownloadService();
+            using var downloadService =
+                new ResumableDownloadService();
 
             var preflightService =
                 _preflightCoordinator.CreateService(
@@ -177,12 +177,6 @@ public sealed class PipelineRunCoordinator
                 job.Details =
                     "Downloading source file...";
 
-                var downloadDirectory =
-                    Path.Combine(
-                        runSettings.WorkDirectory,
-                        "download",
-                        Guid.NewGuid().ToString("N"));
-
                 var downloadProgress =
                     new Progress<TransferProgress>(value =>
                     {
@@ -213,24 +207,23 @@ public sealed class PipelineRunCoordinator
                 var downloadResult =
                     await downloadService.DownloadAsync(
                         job.SourcePath,
-                        downloadDirectory,
+                        runSettings.WorkDirectory,
                         downloadProgress,
                         _downloadCancellationTokenSource.Token,
                         _downloadPauseTokenSource);
 
                 if (!downloadResult.Success)
                 {
-                    TemporaryDownloadCleanupService.CleanupDirectory(
-                        downloadDirectory,
-                        runSettings.WorkDirectory);
-
                     job.State = JobState.Error;
                     job.Stage = JobStage.Error;
                     job.Details =
                         downloadResult.Error;
 
                     if (pipelineCancellationToken.IsCancellationRequested)
+                    {
                         MarkCancelled(job);
+                        job.Details = downloadResult.Error;
+                    }
 
                     continue;
                 }

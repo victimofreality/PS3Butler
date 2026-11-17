@@ -24,9 +24,9 @@ Drop in a game, pick an output format, and let the butler deal with the boring s
 - Title ID / metadata inspection
 - Disk-space checks before processing
 - Transactional destination publishing
-- Download pause/resume
+- Download pause/resume, including restart recovery on compatible servers
 - Pipeline cancellation
-- Cleanup of temporary and incomplete files
+- Cleanup of temporary files, retaining resumable interrupted downloads
 - Sequential downloads with overlapping processing
 
 ## How it works
@@ -42,6 +42,14 @@ PS3 Butler uses a simple pipeline:
 7. Copy/publish the result to the configured destination
 
 Downloads and processing can overlap, but PS3 Butler intentionally runs only one downloader and one processing job at a time.
+
+### Resuming interrupted downloads
+
+After cancellation, an app restart, or a connection failure, start the restored URL job again (or use Retry for a failed job). Butler automatically checks for saved bytes in the same work directory. Downloads do not start automatically when the app opens.
+
+Resume requires a known file length and a strong server ETag. Butler sends `Range` and `If-Range` and verifies the response before appending. If the server ignores ranges or the file has changed, Butler downloads a fresh copy. Servers without suitable validators still work, but interrupted downloads restart from zero. Expired links and login requirements still need a working URL; changing the URL or work directory starts a separate download.
+
+Saved partials are stored under `<work directory>/download/resume`, independently of the queue file. Successful downloads remove their checkpoint and go through the normal preflight, processing and output cleanup. Removing a queue entry does not erase its saved partial; re-adding the identical URL can reuse it. To discard saved partials and reclaim their space, close Butler and delete the `download/resume` folder inside your configured work directory. This also removes abandoned downloads. Keep that folder private: checkpoint metadata can contain download URLs and their access tokens.
 
 ## Output formats
 
@@ -117,7 +125,6 @@ Some things on the roadmap:
 
 - Xbox 360 support
 - FTP delivery
-- download resume
 - improved library indexing
 - webMAN integration
 - further UI polish
